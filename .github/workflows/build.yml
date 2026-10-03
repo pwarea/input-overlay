@@ -1,0 +1,95 @@
+name: Build and publish main updates
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Configure
+        run: cmake -S . -B build -A x64 -DBUILD_TESTING=ON
+      - name: Build
+        run: cmake --build build --config Release
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Package
+        run: |
+          $versionMatch = [regex]::Match((Get-Content -LiteralPath CMakeLists.txt -Raw), '\bproject\s*\(\s*\w+\s+VERSION\s+([0-9]+\.[0-9]+\.[0-9]+)')
+          if (!$versionMatch.Success) { throw 'Project version was not found.' }
+          $commit = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Build commit was not found.' }
+          ./scripts/package.ps1 -ExecutablePath 'build/Release/Input Overlay.exe' -Version $versionMatch.Groups[1].Value -OutputDirectory 'dist/publish'
+          ./scripts/prepare-update.ps1 -ExecutablePath 'build/Release/Input Overlay.exe' -Commit $commit -Version $versionMatch.Groups[1].Value -OutputDirectory 'dist/update'
+          Get-ChildItem -LiteralPath 'dist/update' -File | Copy-Item -Destination 'dist/publish'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-x64
+          path: dist/publish/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+  publish:
+    needs: windows
+    if: github.repository == 'pwarea/input-overlay' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    concurrency:
+      group: publish-main-update
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: windows-x64
+          path: release
+      - name: Verify release assets
+        env:
+          BUILD_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          (cd release && sha256sum -c Input-Overlay-windows-x64.zip.sha256)
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib
+          root = pathlib.Path('release')
+          manifest = json.loads((root / 'update.json').read_text())
+          assert manifest['schema'] == 1 and manifest['commit'] == os.environ['BUILD_COMMIT']
+          expected = {'Input Overlay.exe', 'LICENSE', 'README.md', 'THIRD_PARTY_NOTICES.txt'}
+          assert len(manifest['files']) == 4 and {f['name'] for f in manifest['files']} == expected
+          for item in manifest['files']:
+              asset = 'Input-Overlay.exe' if item['name'] == 'Input Overlay.exe' else item['name']
+              data = (root / asset).read_bytes()
+              assert len(data) == item['size'] and hashlib.sha256(data).hexdigest() == item['sha256']
+          PY
+      - name: Publish commit build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BUILD_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          tag="build-$BUILD_COMMIT"
+          title="Input Overlay ${BUILD_COMMIT:0:12}"
+          if gh release view "$tag" --repo "$GH_REPO" >/dev/null 2>&1; then
+            draft=$(gh api "repos/$GH_REPO/releases/tags/$tag" --jq '.draft')
+            if [ "$draft" != true ]; then exit 0; fi
+          else
+            gh release create "$tag" --repo "$GH_REPO" --target "$BUILD_COMMIT" --draft --title "$title" --notes-file release/release-notes.md
+          fi
+          gh release upload "$tag" --repo "$GH_REPO" --clobber release/update.json release/Input-Overlay.exe release/LICENSE release/README.md release/THIRD_PARTY_NOTICES.txt release/Input-Overlay-windows-x64.zip release/Input-Overlay-windows-x64.zip.sha256
+          head=$(gh api "repos/$GH_REPO/commits/main" --jq '.sha')
+          latest=false
+          if [ "$head" = "$BUILD_COMMIT" ]; then latest=true; fi
+          gh release edit "$tag" --repo "$GH_REPO" --draft=false --latest="$latest"

@@ -1,0 +1,79 @@
+Media Attribution License 1.0
+
+Copyright (c) 2026 pwarea
+
+Origin repository: https://github.com/pwarea/input-overlay
+
+1. Permission
+
+You may use, copy, modify, and distribute this software and its documentation
+(the "Software"), in source or executable form, for personal or commercial
+purposes, including selling copies, subject to the conditions below.
+
+2. Distribution
+
+When distributing the Software or a modified version containing it, include
+this license, its copyright notice, the origin repository URL, and applicable
+third-party notices. Identify modified versions as modified. You may license
+your own additions separately, but you may not remove or contradict the
+conditions of this license for the Software received under it.
+
+3. Public video and livestream attribution
+
+If you use the Software or a modified version to display an input overlay
+in a publicly shared video or livestream, you must provide a clearly visible,
+readable link to the origin repository identified above. Place that link in
+the video's description, the livestream description, or a clearly labeled
+channel panel accessible from the livestream. If descriptions or panels are
+unavailable, show a readable repository URL in the video or livestream credits.
+
+Keep the attribution available while the video or livestream recording remains
+publicly available under your control. An attribution only inside the Software,
+a source repository, or the Software's license file does not satisfy this
+public-media requirement. Attribution need not remain on screen during play.
+Private use and recordings that are not publicly shared do not require credit.
+
+This condition does not transfer ownership of your recordings or other content.
+Statutory rights and exceptions that apply independently of this license are
+not restricted by it. You are responsible only for media you publish or control.
+
+4. Third-party rules and compatibility
+
+You are responsible for checking and complying with the rules of the games,
+platforms, tournaments, services, and anti-cheat systems with which you use the
+Software. The Software is not endorsed or approved by those third parties.
+No assurance is made that its use will be permitted, remain compatible, or
+avoid detection, suspension, an account ban, or another penalty.
+
+5. No warranty
+
+To the maximum extent permitted by applicable law, the Software is provided
+"AS IS" and "AS AVAILABLE", without express or implied warranties, including
+warranties of merchantability, fitness for a particular purpose, title,
+noninfringement, accuracy, reliability, or uninterrupted operation.
+
+6. Limitation of liability
+
+To the maximum extent permitted by applicable law, the authors, copyright
+holders, and contributors are not liable for claims, damages, or losses
+arising from the Software or its use or inability to be used, whether in
+contract, tort, or otherwise. This includes account suspensions or bans,
+loss of access, data, revenue, profits, or goodwill, and direct, indirect,
+incidental, special, or consequential damages, even if advised of their
+possibility. Nothing in this license excludes or limits liability that
+applicable law does not allow to be excluded or limited.
+
+7. Scope and termination
+
+This license grants rights only to the Software covered by it. Third-party
+components remain governed by their own licenses. No trademark rights or
+right to imply endorsement are granted.
+
+Your permissions under this license terminate if you fail to comply with its
+conditions. They are automatically reinstated if you correct the violation
+within 30 days after first learning of it, provided you have not previously
+received this reinstatement for the same violation. Termination does not
+terminate the rights of downstream recipients who remain in compliance.
+
+This is a custom source-available license, not the MIT License or an
+OSI-approved open-source license.

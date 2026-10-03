@@ -1,0 +1,3 @@
+- Added keyboard, mouse, and controller views with transparent Pearl styling.
+- Added configurable inputs, application filters, positioning, and startup preferences.
+- Added optional startup update checks and manual installation with saved settings preserved.

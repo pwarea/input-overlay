@@ -1,0 +1,92 @@
+name: Prepare draft release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag
+        required: true
+        default: v0.1.0
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+env:
+  PRODUCT_NAME: Input Overlay
+jobs:
+  package:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      archive: ${{ steps.package.outputs.archive }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Validate version tag
+        id: version
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') {
+            throw 'Use an existing tag in the form v0.1.0.'
+          }
+          Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value ('tag=' + $env:RELEASE_TAG)
+          Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value ('version=' + $env:RELEASE_TAG.Substring(1))
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: refs/tags/${{ steps.version.outputs.tag }}
+          persist-credentials: false
+      - name: Configure
+        run: cmake -S . -B build -A x64 -DBUILD_TESTING=ON
+      - name: Build
+        run: cmake --build build --config Release
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Package
+        id: package
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $versionMatch = [regex]::Match((Get-Content -LiteralPath CMakeLists.txt -Raw), '(?i)\bproject\s*\(\s*[^\s()]+\s+VERSION\s+([0-9]+\.[0-9]+\.[0-9]+)\b')
+          if (!$versionMatch.Success -or $versionMatch.Groups[1].Value -ne $env:RELEASE_VERSION) {
+            throw 'The release tag must match the CMake project version.'
+          }
+          $executable = Join-Path 'build/Release' ($env:PRODUCT_NAME + '.exe')
+          $package = ./scripts/package.ps1 -ExecutablePath $executable -Name $env:PRODUCT_NAME -Version $env:RELEASE_VERSION -OutputDirectory 'dist/releases'
+          Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value ('archive=' + [IO.Path]::GetFileName($package.Package))
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-windows-x64
+          path: |
+            dist/releases/**/*.zip
+            dist/releases/**/*.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+  draft:
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: release-windows-x64
+          path: release
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.package.outputs.tag }}
+          ARCHIVE_NAME: ${{ needs.package.outputs.archive }}
+        run: |
+          set -euo pipefail
+          (cd release && sha256sum -c "$ARCHIVE_NAME.sha256")
+          printf '%s\n' 'Portable Windows x64 build.' '' 'Download the ZIP and its SHA-256 file, then extract the archive to a writable folder.' > "$RUNNER_TEMP/release-notes.txt"
+          gh release create "$RELEASE_TAG" "release/$ARCHIVE_NAME" "release/$ARCHIVE_NAME.sha256" --repo "$GH_REPO" --verify-tag --draft --title "$PRODUCT_NAME $RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.txt"
