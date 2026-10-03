@@ -420,36 +420,136 @@ void DrawMouse(Gdiplus::Graphics& graphics, const Settings& settings,
     }
 }
 
-void ControllerBody(Gdiplus::GraphicsPath& path) {
-    path.AddBezier(255.0f, 53.0f, 228.0f, 53.0f, 215.0f, 44.0f, 194.0f, 44.0f);
-    path.AddLine(194.0f, 44.0f, 157.0f, 44.0f);
-    path.AddBezier(157.0f, 44.0f, 132.0f, 44.0f, 121.0f, 53.0f, 117.0f, 76.0f);
-    path.AddLine(117.0f, 76.0f, 94.0f, 171.0f);
-    path.AddBezier(94.0f, 171.0f, 88.0f, 202.0f, 114.0f, 214.0f, 134.0f, 195.0f);
-    path.AddLine(134.0f, 195.0f, 174.0f, 158.0f);
-    path.AddBezier(174.0f, 158.0f, 192.0f, 140.0f, 214.0f, 162.0f, 255.0f, 162.0f);
-    path.AddBezier(255.0f, 162.0f, 296.0f, 162.0f, 318.0f, 140.0f, 336.0f, 158.0f);
-    path.AddLine(336.0f, 158.0f, 376.0f, 195.0f);
-    path.AddBezier(376.0f, 195.0f, 396.0f, 214.0f, 422.0f, 202.0f, 416.0f, 171.0f);
-    path.AddLine(416.0f, 171.0f, 393.0f, 76.0f);
-    path.AddBezier(393.0f, 76.0f, 389.0f, 53.0f, 378.0f, 44.0f, 353.0f, 44.0f);
-    path.AddLine(353.0f, 44.0f, 316.0f, 44.0f);
-    path.AddBezier(316.0f, 44.0f, 295.0f, 44.0f, 282.0f, 53.0f, 255.0f, 53.0f);
+void ControllerBody(Gdiplus::GraphicsPath& path, bool playStation) {
+    if (playStation) {
+        path.AddBezier(255.0f, 35.0f, 217.0f, 35.0f, 174.0f, 32.0f, 148.0f, 39.0f);
+        path.AddBezier(148.0f, 39.0f, 129.0f, 44.0f, 118.0f, 58.0f, 110.0f, 80.0f);
+        path.AddBezier(110.0f, 80.0f, 97.0f, 113.0f, 85.0f, 170.0f, 93.0f, 194.0f);
+        path.AddBezier(93.0f, 194.0f, 97.0f, 208.0f, 114.0f, 215.0f, 127.0f, 203.0f);
+        path.AddBezier(127.0f, 203.0f, 138.0f, 190.0f, 145.0f, 165.0f, 157.0f, 154.0f);
+        path.AddBezier(157.0f, 154.0f, 166.0f, 146.0f, 183.0f, 148.0f, 204.0f, 150.0f);
+        path.AddBezier(204.0f, 150.0f, 230.0f, 153.0f, 280.0f, 153.0f, 306.0f, 150.0f);
+        path.AddBezier(306.0f, 150.0f, 327.0f, 148.0f, 344.0f, 146.0f, 353.0f, 154.0f);
+        path.AddBezier(353.0f, 154.0f, 365.0f, 165.0f, 372.0f, 190.0f, 383.0f, 203.0f);
+        path.AddBezier(383.0f, 203.0f, 396.0f, 215.0f, 413.0f, 208.0f, 417.0f, 194.0f);
+        path.AddBezier(417.0f, 194.0f, 425.0f, 170.0f, 413.0f, 113.0f, 400.0f, 80.0f);
+        path.AddBezier(400.0f, 80.0f, 392.0f, 58.0f, 381.0f, 44.0f, 362.0f, 39.0f);
+        path.AddBezier(362.0f, 39.0f, 336.0f, 32.0f, 293.0f, 35.0f, 255.0f, 35.0f);
+    } else {
+        path.AddBezier(255.0f, 39.0f, 228.0f, 39.0f, 194.0f, 32.0f, 160.0f, 35.0f);
+        path.AddBezier(160.0f, 35.0f, 133.0f, 36.0f, 117.0f, 47.0f, 109.0f, 73.0f);
+        path.AddBezier(109.0f, 73.0f, 98.0f, 108.0f, 83.0f, 164.0f, 89.0f, 188.0f);
+        path.AddBezier(89.0f, 188.0f, 94.0f, 210.0f, 110.0f, 216.0f, 125.0f, 200.0f);
+        path.AddBezier(125.0f, 200.0f, 145.0f, 181.0f, 161.0f, 159.0f, 184.0f, 153.0f);
+        path.AddBezier(184.0f, 153.0f, 207.0f, 147.0f, 303.0f, 147.0f, 326.0f, 153.0f);
+        path.AddBezier(326.0f, 153.0f, 349.0f, 159.0f, 365.0f, 181.0f, 385.0f, 200.0f);
+        path.AddBezier(385.0f, 200.0f, 400.0f, 216.0f, 416.0f, 210.0f, 421.0f, 188.0f);
+        path.AddBezier(421.0f, 188.0f, 427.0f, 164.0f, 412.0f, 108.0f, 401.0f, 73.0f);
+        path.AddBezier(401.0f, 73.0f, 393.0f, 47.0f, 377.0f, 36.0f, 350.0f, 35.0f);
+        path.AddBezier(350.0f, 35.0f, 316.0f, 32.0f, 282.0f, 39.0f, 255.0f, 39.0f);
+    }
     path.CloseFigure();
+}
+
+Gdiplus::Color ControllerAccent(const Settings& settings, BYTE alpha) {
+    if (settings.controllerStyle == ControllerStyle::Prism) return Tint(ThemeColorAt(settings, 0.5f), alpha);
+    return Tint(settings.accent, alpha);
+}
+
+void ControllerSurface(Gdiplus::Graphics& graphics, Gdiplus::GraphicsPath& path,
+                       const Settings& settings, bool down, const Gdiplus::RectF& bounds,
+                       bool shell = false) {
+    if (settings.controllerStyle == ControllerStyle::Prism) {
+        const auto palette = ThemePalette(settings);
+        const BYTE alpha = down ? 164 : static_cast<BYTE>(std::clamp(settings.gradientFillOpacity, 4, 45) * (shell ? 1.75f : 1.15f));
+        Gdiplus::LinearGradientBrush fill(Gdiplus::PointF(89.0f, 32.0f), Gdiplus::PointF(421.0f, 210.0f),
+            Tint(palette.start, alpha), Tint(palette.end, alpha));
+        graphics.FillPath(&fill, &path);
+    } else if (settings.controllerStyle == ControllerStyle::Air) {
+        Gdiplus::SolidBrush fill(down ? ControllerAccent(settings, 125) : Gdiplus::Color(shell ? 3 : 8, 236, 250, 251));
+        graphics.FillPath(&fill, &path);
+    } else {
+        Gdiplus::LinearGradientBrush fill(bounds, Gdiplus::Color(0, 255, 255, 255),
+            Gdiplus::Color(0, 255, 255, 255), Gdiplus::LinearGradientModeVertical);
+        const Gdiplus::Color colors[] = {
+            down ? ControllerAccent(settings, 190) : Gdiplus::Color(shell ? 49 : 66, 237, 249, 255),
+            down ? ControllerAccent(settings, 126) : Gdiplus::Color(shell ? 10 : 17, 186, 217, 254),
+            down ? ControllerAccent(settings, 103) : Gdiplus::Color(shell ? 4 : 9, 179, 211, 247),
+            down ? ControllerAccent(settings, 169) : Gdiplus::Color(shell ? 29 : 42, 233, 246, 255)};
+        const Gdiplus::REAL stops[] = {0.0f, 0.18f, 0.70f, 1.0f};
+        fill.SetInterpolationColors(colors, stops, 4);
+        graphics.FillPath(&fill, &path);
+    }
+}
+
+void ControllerStroke(Gdiplus::Graphics& graphics, Gdiplus::GraphicsPath& path,
+                      const Settings& settings, bool down, float width = 1.25f) {
+    Gdiplus::Pen depth(Gdiplus::Color(120, 8, 18, 31), width + 1.6f);
+    depth.SetLineJoin(Gdiplus::LineJoinRound);
+    graphics.DrawPath(&depth, &path);
+    if (down || settings.controllerStyle == ControllerStyle::Frost) {
+        Gdiplus::Pen light(down ? ControllerAccent(settings, 35) : Gdiplus::Color(22, 218, 241, 255), width + 3.2f);
+        light.SetLineJoin(Gdiplus::LineJoinRound);
+        graphics.DrawPath(&light, &path);
+    }
+    if (settings.controllerStyle == ControllerStyle::Prism) {
+        const auto palette = ThemePalette(settings);
+        Gdiplus::LinearGradientBrush gradient(Gdiplus::PointF(89.0f, 32.0f), Gdiplus::PointF(421.0f, 210.0f),
+            Tint(palette.start, 234), Tint(palette.end, 234));
+        Gdiplus::Pen edge(&gradient, width);
+        edge.SetLineJoin(Gdiplus::LineJoinRound);
+        edge.SetStartCap(Gdiplus::LineCapRound);
+        edge.SetEndCap(Gdiplus::LineCapRound);
+        graphics.DrawPath(&edge, &path);
+        if (down) {
+            Gdiplus::Pen highlight(Gdiplus::Color(210, 255, 247, 239), 0.8f);
+            highlight.SetLineJoin(Gdiplus::LineJoinRound);
+            graphics.DrawPath(&highlight, &path);
+        }
+    } else {
+        Gdiplus::RectF bounds;
+        path.GetBounds(&bounds);
+        bounds.Width = std::max(bounds.Width, 1.0f);
+        bounds.Height = std::max(bounds.Height, 1.0f);
+        Gdiplus::LinearGradientBrush reflection(bounds,
+            down ? ControllerAccent(settings, 255) : Gdiplus::Color(243, 249, 253, 255),
+            down ? Gdiplus::Color(248, 236, 254, 255) : Gdiplus::Color(164, 204, 226, 243),
+            Gdiplus::LinearGradientModeVertical);
+        Gdiplus::Pen edge(&reflection, width);
+        edge.SetLineJoin(Gdiplus::LineJoinRound);
+        edge.SetStartCap(Gdiplus::LineCapRound);
+        edge.SetEndCap(Gdiplus::LineCapRound);
+        graphics.DrawPath(&edge, &path);
+    }
+}
+
+void ControllerDetail(Gdiplus::Graphics& graphics, Gdiplus::GraphicsPath& path,
+                      const Settings& settings, BYTE alpha = 90, float width = 0.8f) {
+    const bool prism = settings.controllerStyle == ControllerStyle::Prism;
+    const auto palette = ThemePalette(settings);
+    Gdiplus::LinearGradientBrush reflection(Gdiplus::PointF(89.0f, 32.0f), Gdiplus::PointF(421.0f, 210.0f),
+        prism ? Tint(palette.start, alpha) : Gdiplus::Color(alpha, 244, 251, 255),
+        prism ? Tint(palette.end, alpha) : Gdiplus::Color(alpha / 2, 188, 218, 244));
+    Gdiplus::Pen pen(&reflection, width);
+    pen.SetLineJoin(Gdiplus::LineJoinRound);
+    pen.SetStartCap(Gdiplus::LineCapRound);
+    pen.SetEndCap(Gdiplus::LineCapRound);
+    graphics.DrawPath(&pen, &path);
 }
 
 void ControllerText(Gdiplus::Graphics& graphics, const Settings& settings,
                     const wchar_t* label, const Gdiplus::Font& font, bool down,
                     const Gdiplus::RectF& bounds) {
-    PearlLabel(graphics, label, font, down ? PressedInk(settings) : Gdiplus::Color(255, 244, 249, 255),
+    PearlLabel(graphics, label, font, down ? Gdiplus::Color(255, 255, 255, 255) :
+        settings.controllerStyle == ControllerStyle::Prism ? Gdiplus::Color(250, 255, 241, 234) : Gdiplus::Color(245, 239, 247, 255),
         bounds.X, bounds.Y, bounds.Width, bounds.Height);
 }
 
 void ControllerSymbol(Gdiplus::Graphics& graphics, Gdiplus::GraphicsPath& path,
                       const Settings& settings, bool down, float width = 1.6f) {
-    const auto ink = down ? PressedInk(settings) : Gdiplus::Color(255, 244, 249, 255);
-    Gdiplus::Pen contrast(ink.GetR() < 128 ? Gdiplus::Color(175, 247, 252, 255) :
-        Gdiplus::Color(190, 13, 25, 35), width + 1.6f);
+    const auto ink = down ? Gdiplus::Color(255, 255, 255, 255) :
+        settings.controllerStyle == ControllerStyle::Prism ? Gdiplus::Color(250, 255, 237, 231) : Gdiplus::Color(250, 239, 247, 255);
+    Gdiplus::Pen contrast(Gdiplus::Color(170, 13, 25, 35), width + 1.4f);
     Gdiplus::Pen foreground(ink, width);
     contrast.SetLineJoin(Gdiplus::LineJoinRound);
     foreground.SetLineJoin(Gdiplus::LineJoinRound);
@@ -461,8 +561,8 @@ void ControllerSymbol(Gdiplus::Graphics& graphics, Gdiplus::GraphicsPath& path,
 
 void ControllerCap(Gdiplus::Graphics& graphics, Gdiplus::GraphicsPath& path,
                    const Settings& settings, bool down, const Gdiplus::RectF& bounds) {
-    Surface(graphics, path, settings, down, bounds);
-    Stroke(graphics, path, settings, down, 1.25f, 2.7f, true);
+    ControllerSurface(graphics, path, settings, down, bounds);
+    ControllerStroke(graphics, path, settings, down);
 }
 
 float ControllerAxis(float value, float minimum = -1.0f) {
@@ -470,34 +570,68 @@ float ControllerAxis(float value, float minimum = -1.0f) {
 }
 
 void ControllerStick(Gdiplus::Graphics& graphics, const Settings& settings,
-                     const Gdiplus::Font& font, float x, float y,
-                     float axisX, float axisY, bool down, const wchar_t* label) {
-    const float dx = ControllerAxis(axisX) * 8.5f, dy = -ControllerAxis(axisY) * 8.5f;
-    Gdiplus::GraphicsPath ring, cap;
-    ring.AddEllipse(x - 25.0f, y - 25.0f, 50.0f, 50.0f);
-    Surface(graphics, ring, settings, false, Gdiplus::RectF(x - 25.0f, y - 25.0f, 50.0f, 50.0f));
-    Stroke(graphics, ring, settings, false, 1.1f, 2.5f);
+                     float x, float y, float axisX, float axisY, bool down) {
+    float dx = ControllerAxis(axisX), dy = -ControllerAxis(axisY);
+    const float magnitude = std::sqrt(dx * dx + dy * dy);
+    if (magnitude > 1.0f) { dx /= magnitude; dy /= magnitude; }
+    dx *= 7.0f;
+    dy *= 7.0f;
+    Gdiplus::GraphicsPath ring, well, cap, inset;
+    ring.AddEllipse(x - 24.5f, y - 24.5f, 49.0f, 49.0f);
+    ControllerSurface(graphics, ring, settings, false, Gdiplus::RectF(x - 24.5f, y - 24.5f, 49.0f, 49.0f));
+    ControllerStroke(graphics, ring, settings, false, 1.05f);
+    well.AddEllipse(x - 21.0f, y - 21.0f, 42.0f, 42.0f);
+    ControllerDetail(graphics, well, settings, settings.controllerStyle == ControllerStyle::Air ? 100 : 155);
     if (dx * dx + dy * dy > 0.5f) {
-        Gdiplus::Pen travel(Accent(settings, 200, 15), 3.5f);
+        Gdiplus::Pen travel(ControllerAccent(settings, 185), 3.0f);
         travel.SetStartCap(Gdiplus::LineCapRound);
         travel.SetEndCap(Gdiplus::LineCapRound);
-        graphics.DrawLine(&travel, x, y, x + dx * 2.4f, y + dy * 2.4f);
+        graphics.DrawLine(&travel, x, y, x + dx * 2.75f, y + dy * 2.75f);
     }
     cap.AddEllipse(x + dx - 15.0f, y + dy - 15.0f, 30.0f, 30.0f);
     ControllerCap(graphics, cap, settings, down,
         Gdiplus::RectF(x + dx - 15.0f, y + dy - 15.0f, 30.0f, 30.0f));
-    ControllerText(graphics, settings, label, font, down,
-        Gdiplus::RectF(x + dx - 14.0f, y + dy - 14.0f, 28.0f, 28.0f));
+    inset.AddArc(x + dx - 11.7f, y + dy - 11.7f, 23.4f, 23.4f, 200.0f, 140.0f);
+    ControllerDetail(graphics, inset, settings, down ? 220 : 140);
 }
 
 void ControllerDpad(Gdiplus::Graphics& graphics, const Settings& settings,
-                    float x, float y, std::uint16_t buttons) {
+                    float x, float y, std::uint16_t buttons, bool playStation) {
     constexpr std::uint16_t masks[] = {0x0001, 0x0008, 0x0002, 0x0004};
+    if (!playStation) {
+        Gdiplus::GraphicsPath dish, cross;
+        dish.AddEllipse(x - 24.0f, y - 24.0f, 48.0f, 48.0f);
+        ControllerSurface(graphics, dish, settings, false, Gdiplus::RectF(x - 24.0f, y - 24.0f, 48.0f, 48.0f));
+        ControllerDetail(graphics, dish, settings, 150, 1.0f);
+        const Gdiplus::PointF outline[] = {{x - 6.7f, y - 21.0f}, {x + 6.7f, y - 21.0f},
+            {x + 6.7f, y - 6.7f}, {x + 21.0f, y - 6.7f}, {x + 21.0f, y + 6.7f},
+            {x + 6.7f, y + 6.7f}, {x + 6.7f, y + 21.0f}, {x - 6.7f, y + 21.0f},
+            {x - 6.7f, y + 6.7f}, {x - 21.0f, y + 6.7f}, {x - 21.0f, y - 6.7f}, {x - 6.7f, y - 6.7f}};
+        cross.AddPolygon(outline, 12);
+        ControllerSurface(graphics, cross, settings, false, Gdiplus::RectF(x - 21.0f, y - 21.0f, 42.0f, 42.0f));
+        for (int direction = 0; direction < 4; ++direction) {
+            if ((buttons & masks[direction]) == 0) continue;
+            Gdiplus::GraphicsPath cap;
+            const Gdiplus::PointF points[] = {{x - 6.7f, y - 21.0f}, {x + 6.7f, y - 21.0f},
+                {x + 6.7f, y - 6.7f}, {x, y}, {x - 6.7f, y - 6.7f}};
+            cap.AddPolygon(points, 5);
+            Gdiplus::Matrix rotate;
+            rotate.RotateAt(static_cast<float>(direction) * 90.0f, Gdiplus::PointF(x, y));
+            cap.Transform(&rotate);
+            Gdiplus::RectF bounds;
+            cap.GetBounds(&bounds);
+            ControllerSurface(graphics, cap, settings, true, bounds);
+        }
+        ControllerStroke(graphics, cross, settings, false, 1.25f);
+        return;
+    }
     for (int direction = 0; direction < 4; ++direction) {
         Gdiplus::GraphicsPath cap, arrow;
-        Gdiplus::PointF points[] = {{x - 6.5f, y - 22.0f}, {x + 6.5f, y - 22.0f},
-            {x + 6.5f, y - 8.0f}, {x, y - 2.5f}, {x - 6.5f, y - 8.0f}};
-        cap.AddPolygon(points, 5);
+        cap.AddBezier(x - 7.3f, y - 20.5f, x - 7.3f, y - 24.5f, x + 7.3f, y - 24.5f, x + 7.3f, y - 20.5f);
+        cap.AddLine(x + 7.3f, y - 20.5f, x + 7.3f, y - 11.0f);
+        cap.AddBezier(x + 7.3f, y - 11.0f, x + 7.3f, y - 8.0f, x + 2.0f, y - 4.3f, x, y - 3.5f);
+        cap.AddBezier(x, y - 3.5f, x - 2.0f, y - 4.3f, x - 7.3f, y - 8.0f, x - 7.3f, y - 11.0f);
+        cap.CloseFigure();
         arrow.AddLine(x - 2.5f, y - 13.5f, x, y - 16.0f);
         arrow.AddLine(x, y - 16.0f, x + 2.5f, y - 13.5f);
         Gdiplus::Matrix rotate;
@@ -508,7 +642,7 @@ void ControllerDpad(Gdiplus::Graphics& graphics, const Settings& settings,
         cap.GetBounds(&bounds);
         const bool down = (buttons & masks[direction]) != 0;
         ControllerCap(graphics, cap, settings, down, bounds);
-        ControllerSymbol(graphics, arrow, settings, down, 1.3f);
+        ControllerSymbol(graphics, arrow, settings, down, 1.1f);
     }
 }
 
@@ -519,63 +653,90 @@ void DrawController(Gdiplus::Graphics& graphics, const Settings& settings,
     const auto down = [&state](std::uint16_t button) { return (state.buttons & button) != 0; };
     Gdiplus::FontFamily family(L"Segoe UI");
     Gdiplus::Font smallFont(&family, 11.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
-    Gdiplus::Font letter(&family, 16.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+    Gdiplus::Font letter(&family, 15.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+    Gdiplus::GraphicsPath body, reflection, leftGrip, rightGrip;
+    ControllerBody(body, playStation);
+    ControllerSurface(graphics, body, settings, false, Gdiplus::RectF(88.0f, 35.0f, 334.0f, 175.0f), true);
+    ControllerStroke(graphics, body, settings, false, settings.controllerStyle == ControllerStyle::Air ? 1.15f : 1.6f);
+    ControllerBody(reflection, playStation);
+    Gdiplus::Matrix inset(0.982f, 0.0f, 0.0f, 0.976f, 4.59f, 2.9f);
+    reflection.Transform(&inset);
+    ControllerDetail(graphics, reflection, settings, settings.controllerStyle == ControllerStyle::Air ? 65 : 155);
+    if (playStation) {
+        leftGrip.AddBezier(181.0f, 93.0f, 179.0f, 103.0f, 168.0f, 109.0f, 155.0f, 130.0f);
+        leftGrip.AddBezier(155.0f, 130.0f, 138.0f, 157.0f, 132.0f, 188.0f, 117.0f, 208.0f);
+    } else {
+        leftGrip.AddBezier(105.0f, 104.0f, 114.0f, 119.0f, 136.0f, 124.0f, 139.0f, 143.0f);
+        leftGrip.AddBezier(139.0f, 143.0f, 143.0f, 165.0f, 121.0f, 192.0f, 112.0f, 206.0f);
+    }
+    rightGrip.AddPath(&leftGrip, FALSE);
+    Gdiplus::Matrix mirror(-1.0f, 0.0f, 0.0f, 1.0f, 510.0f, 0.0f);
+    rightGrip.Transform(&mirror);
+    const BYTE seamAlpha = settings.controllerStyle == ControllerStyle::Air ? 36 : 125;
+    ControllerDetail(graphics, leftGrip, settings, seamAlpha);
+    ControllerDetail(graphics, rightGrip, settings, seamAlpha);
+    if (playStation) {
+        Gdiplus::GraphicsPath touchpad, lip, speaker;
+        touchpad.AddBezier(204.0f, 43.0f, 225.0f, 41.0f, 285.0f, 41.0f, 306.0f, 43.0f);
+        touchpad.AddBezier(306.0f, 43.0f, 309.0f, 43.0f, 310.0f, 45.0f, 309.0f, 49.0f);
+        touchpad.AddLine(309.0f, 49.0f, 302.0f, 84.0f);
+        touchpad.AddBezier(302.0f, 84.0f, 301.0f, 92.0f, 296.0f, 95.0f, 288.0f, 95.0f);
+        touchpad.AddLine(288.0f, 95.0f, 222.0f, 95.0f);
+        touchpad.AddBezier(222.0f, 95.0f, 214.0f, 95.0f, 209.0f, 92.0f, 208.0f, 84.0f);
+        touchpad.AddLine(208.0f, 84.0f, 201.0f, 49.0f);
+        touchpad.AddBezier(201.0f, 49.0f, 200.0f, 45.0f, 201.0f, 43.0f, 204.0f, 43.0f);
+        touchpad.CloseFigure();
+        ControllerSurface(graphics, touchpad, settings, false, Gdiplus::RectF(200.0f, 42.0f, 110.0f, 53.0f));
+        ControllerStroke(graphics, touchpad, settings, false, 1.05f);
+        lip.AddBezier(207.0f, 46.0f, 231.0f, 44.5f, 279.0f, 44.5f, 303.0f, 46.0f);
+        lip.StartFigure();
+        lip.AddBezier(214.0f, 90.0f, 218.0f, 94.0f, 292.0f, 94.0f, 296.0f, 90.0f);
+        ControllerDetail(graphics, lip, settings, settings.controllerStyle == ControllerStyle::Air ? 80 : 195);
+        for (int dot = 0; dot < 5; ++dot) speaker.AddEllipse(242.0f + dot * 5.5f, 102.0f, 2.0f, 2.0f);
+        for (int dot = 0; dot < 4; ++dot) speaker.AddEllipse(244.75f + dot * 5.5f, 107.0f, 2.0f, 2.0f);
+        ControllerDetail(graphics, speaker, settings, 145, 0.7f);
+    } else {
+        Gdiplus::GraphicsPath crown;
+        crown.AddBezier(176.0f, 39.0f, 191.0f, 40.0f, 198.0f, 59.0f, 215.0f, 61.0f);
+        crown.AddBezier(215.0f, 61.0f, 235.0f, 63.0f, 275.0f, 63.0f, 295.0f, 61.0f);
+        crown.AddBezier(295.0f, 61.0f, 312.0f, 59.0f, 319.0f, 40.0f, 334.0f, 39.0f);
+        ControllerDetail(graphics, crown, settings, settings.controllerStyle == ControllerStyle::Air ? 30 : 105);
+    }
     for (int side = 0; side < 2; ++side) {
         const float x = side == 0 ? 136.0f : 309.0f;
         const float amount = ControllerAxis(side == 0 ? state.leftTrigger : state.rightTrigger, 0.0f);
         Gdiplus::GraphicsPath trigger, shoulder;
-        Rounded(trigger, x, 9.0f, 65.0f, 18.0f, 6.0f);
-        Surface(graphics, trigger, settings, false, Gdiplus::RectF(x, 9.0f, 65.0f, 18.0f));
+        trigger.AddBezier(x, 27.0f, x + 1.0f, 16.0f, x + 14.0f, 10.0f, x + 47.0f, 9.0f);
+        trigger.AddBezier(x + 47.0f, 9.0f, x + 56.0f, 8.0f, x + 56.0f, 11.0f, x + 65.0f, 26.0f);
+        trigger.AddLine(x + 65.0f, 26.0f, x, 27.0f);
+        trigger.CloseFigure();
+        if (side != 0) {
+            Gdiplus::Matrix triggerMirror(-1.0f, 0.0f, 0.0f, 1.0f, x * 2.0f + 65.0f, 0.0f);
+            trigger.Transform(&triggerMirror);
+        }
+        ControllerSurface(graphics, trigger, settings, false, Gdiplus::RectF(x, 9.0f, 65.0f, 18.0f));
         if (amount > 0.0f) {
             const auto saved = graphics.Save();
             graphics.SetClip(&trigger, Gdiplus::CombineModeIntersect);
-            if (settings.style == OverlayStyle::Gradient) {
-                graphics.SetClip(Gdiplus::RectF(x, 9.0f, 65.0f * amount, 18.0f), Gdiplus::CombineModeIntersect);
-                Surface(graphics, trigger, settings, true, Gdiplus::RectF(x, 9.0f, 65.0f, 18.0f));
-            } else {
-                Gdiplus::SolidBrush fill(Accent(settings, 220, 15));
-                graphics.FillRectangle(&fill, x, 9.0f, 65.0f * amount, 18.0f);
-            }
+            graphics.SetClip(Gdiplus::RectF(x, 9.0f, 65.0f * amount, 18.0f), Gdiplus::CombineModeIntersect);
+            ControllerSurface(graphics, trigger, settings, true, Gdiplus::RectF(x, 9.0f, 65.0f, 18.0f));
             graphics.Restore(saved);
         }
-        Stroke(graphics, trigger, settings, amount > 0.0f, 1.25f, 2.7f, true);
+        ControllerStroke(graphics, trigger, settings, amount > 0.0f, 1.1f);
         ControllerText(graphics, settings, side == 0 ? (playStation ? L"L2" : L"LT") :
-            (playStation ? L"R2" : L"RT"), smallFont, false, Gdiplus::RectF(x, 9.0f, 65.0f, 17.0f));
-        Rounded(shoulder, x - 7.0f, 32.0f, 79.0f, 15.0f, 5.0f);
+            (playStation ? L"R2" : L"RT"), smallFont, false, Gdiplus::RectF(x + 5.0f, 11.0f, 55.0f, 14.0f));
+        Rounded(shoulder, x - 7.0f, 30.0f, 79.0f, 15.0f, 6.0f);
         const bool held = down(side == 0 ? 0x0100 : 0x0200);
-        ControllerCap(graphics, shoulder, settings, held, Gdiplus::RectF(x - 7.0f, 32.0f, 79.0f, 15.0f));
+        ControllerCap(graphics, shoulder, settings, held, Gdiplus::RectF(x - 7.0f, 30.0f, 79.0f, 15.0f));
         ControllerText(graphics, settings, side == 0 ? (playStation ? L"L1" : L"LB") :
-            (playStation ? L"R1" : L"RB"), smallFont, held, Gdiplus::RectF(x - 7.0f, 30.5f, 79.0f, 16.0f));
+            (playStation ? L"R1" : L"RB"), smallFont, held, Gdiplus::RectF(x - 7.0f, 29.0f, 79.0f, 16.0f));
     }
-    Gdiplus::GraphicsPath body;
-    ControllerBody(body);
-    Surface(graphics, body, settings, false, Gdiplus::RectF(91.0f, 44.0f, 328.0f, 159.0f));
-    Stroke(graphics, body, settings, false, 1.4f, 3.0f, true);
-    if (settings.style == OverlayStyle::Pearl || settings.style == OverlayStyle::Glass) {
-        Gdiplus::GraphicsPath reflection;
-        ControllerBody(reflection);
-        Gdiplus::Matrix inset(0.978f, 0.0f, 0.0f, 0.965f, 5.61f, 4.32f);
-        reflection.Transform(&inset);
-        Gdiplus::LinearGradientBrush sheen(Gdiplus::RectF(91.0f, 44.0f, 328.0f, 159.0f),
-            Gdiplus::Color(105, 255, 255, 255), Gdiplus::Color(25, 246, 251, 255),
-            Gdiplus::LinearGradientModeVertical);
-        Gdiplus::Pen inner(&sheen, 0.9f);
-        graphics.DrawPath(&inner, &reflection);
-    } else if (settings.style == OverlayStyle::Circuit) {
-        Gdiplus::Pen mark(Accent(settings, 220, 10), 1.4f);
-        for (int side = 0; side < 2; ++side) {
-            const float x = side == 0 ? 116.0f : 394.0f;
-            const float toward = side == 0 ? 1.0f : -1.0f;
-            graphics.DrawLine(&mark, x, 170.0f, x + toward * 6.0f, 178.0f);
-            graphics.DrawLine(&mark, x + toward * 6.0f, 178.0f, x + toward * 16.0f, 166.0f);
-        }
-    }
-    ControllerStick(graphics, settings, smallFont, playStation ? 211.0f : 158.0f,
-        playStation ? 126.0f : 87.0f, state.leftX, state.leftY, down(0x0040), L"L3");
-    ControllerStick(graphics, settings, smallFont, 299.0f, 126.0f,
-        state.rightX, state.rightY, down(0x0080), L"R3");
+    ControllerStick(graphics, settings, playStation ? 211.0f : 158.0f,
+        playStation ? 126.0f : 87.0f, state.leftX, state.leftY, down(0x0040));
+    ControllerStick(graphics, settings, 299.0f, 126.0f,
+        state.rightX, state.rightY, down(0x0080));
     ControllerDpad(graphics, settings, playStation ? 158.0f : 211.0f,
-        playStation ? 87.0f : 126.0f, state.buttons);
+        playStation ? 87.0f : 126.0f, state.buttons, playStation);
     constexpr std::uint16_t faceMasks[] = {0x8000, 0x2000, 0x1000, 0x4000};
     const wchar_t* faceLabels[] = {L"Y", L"B", L"A", L"X"};
     const Gdiplus::PointF faceCenters[] = {{352.0f, 64.0f}, {375.0f, 87.0f},
@@ -604,31 +765,34 @@ void DrawController(Gdiplus::Graphics& graphics, const Settings& settings,
         }
     }
     for (int button = 0; button < 2; ++button) {
-        const float x = button == 0 ? 227.0f : 283.0f;
+        const float x = playStation ? (button == 0 ? 187.0f : 323.0f) : (button == 0 ? 227.0f : 283.0f);
+        const float y = playStation ? 58.0f : 78.0f;
         const bool held = down(button == 0 ? 0x0020 : 0x0010);
         Gdiplus::GraphicsPath cap, symbol;
-        Rounded(cap, x - 10.0f, 68.0f, 20.0f, 17.0f, 5.0f);
-        ControllerCap(graphics, cap, settings, held, Gdiplus::RectF(x - 10.0f, 68.0f, 20.0f, 17.0f));
+        if (playStation) Rounded(cap, x - 3.0f, y - 8.0f, 6.0f, 16.0f, 3.0f);
+        else cap.AddEllipse(x - 8.5f, y - 8.5f, 17.0f, 17.0f);
+        ControllerCap(graphics, cap, settings, held, Gdiplus::RectF(x - 8.5f, y - 8.5f, 17.0f, 17.0f));
+        if (playStation) continue;
         if (button == 0) {
-            symbol.AddRectangle(Gdiplus::RectF(x - 4.5f, 72.5f, 6.0f, 5.0f));
-            symbol.AddRectangle(Gdiplus::RectF(x - 1.0f, 75.0f, 6.0f, 5.0f));
-        } else for (float y = 73.0f; y <= 80.0f; y += 3.5f) {
+            symbol.AddRectangle(Gdiplus::RectF(x - 4.0f, y - 4.0f, 5.5f, 5.0f));
+            symbol.AddRectangle(Gdiplus::RectF(x - 1.0f, y - 1.0f, 5.5f, 5.0f));
+        } else for (float line = y - 3.5f; line <= y + 3.5f; line += 3.5f) {
             symbol.StartFigure();
-            symbol.AddLine(x - 4.0f, y, x + 4.0f, y);
+            symbol.AddLine(x - 4.0f, line, x + 4.0f, line);
         }
-        ControllerSymbol(graphics, symbol, settings, held, 1.2f);
+        ControllerSymbol(graphics, symbol, settings, held, 1.0f);
     }
     if (!state.connected) ControllerText(graphics, settings, L"No controller", smallFont, false,
         Gdiplus::RectF(195.0f, 177.0f, 120.0f, 20.0f));
 }
 void DrawDevice(Gdiplus::Graphics& graphics, const Settings& settings,
                 const std::array<bool, InputCount>& pressed, const ControllerState& controller) {
-    Gdiplus::FontFamily family(L"Segoe UI");
-    Gdiplus::Font letter(&family, 15.5f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
-    Gdiplus::Font modifier(&family, 12.5f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
     if (settings.device == OverlayDevice::Controller) {
         DrawController(graphics, settings, controller);
     } else {
+        Gdiplus::FontFamily family(L"Segoe UI");
+        Gdiplus::Font letter(&family, 15.5f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+        Gdiplus::Font modifier(&family, 12.5f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
         for (size_t row = 0; row < 3; ++row) {
             const float y = 8.0f + static_cast<float>(row) * 41.0f;
             const float firstWidth = 55.0f + static_cast<float>(row) * 10.0f;

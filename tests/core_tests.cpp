@@ -497,6 +497,90 @@ void TestControllerSettings(const TemporaryDirectory& temp) {
         "Legacy files must remain in keyboard and mouse mode and retain their existing restrictions");
 }
 
+void TestControllerStyles(const TemporaryDirectory& temp) {
+    const auto file = temp.File(L"controller-styles.ini");
+    auto settings = input_overlay::DefaultSettings();
+    Check(settings.controllerStyle == input_overlay::ControllerStyle::Frost,
+        "New settings must use the Frost controller design");
+    settings.controllerStyle = input_overlay::ControllerStyle::Prism;
+    Check(!input_overlay::LoadSettings(temp.File(L"new-controller-style.ini"), settings) &&
+        settings.controllerStyle == input_overlay::ControllerStyle::Frost,
+        "A missing settings file must restore the default controller design");
+    settings.device = input_overlay::OverlayDevice::Controller;
+    settings.controllerIndex = 2;
+    settings.controllerDeadzone = 23;
+    settings.enabled = false;
+    settings.onlySelectedApps = true;
+    settings.startMinimized = true;
+    settings.autoCheckUpdates = false;
+    settings.applications = {temp.File(L"Absent Game\\game.exe")};
+    settings.x = 83; settings.y = 57; settings.scale = 123; settings.opacity = 64;
+    settings.anchorRight = true; settings.anchorBottom = false;
+    settings.monitor = L"\\\\.\\DISPLAY2";
+    settings.isoLayout = true; settings.showMouse = false;
+    settings.colorTheme = input_overlay::ColorTheme::Custom;
+    settings.backgroundStart = RGB(25, 81, 147); settings.backgroundEnd = RGB(230, 156, 7);
+    settings.gradientFillOpacity = 24; settings.accent = RGB(63, 224, 190);
+    settings.hotkeyVk = VK_F8; settings.hotkeyModifiers = MOD_SHIFT;
+    input_overlay::BindInput(settings, SideSlot, 'Q');
+    for (int style = 0; style < input_overlay::ControllerStyleCount; ++style)
+        for (int keyboardStyle = 0; keyboardStyle < input_overlay::OverlayStyleCount; ++keyboardStyle)
+            for (const auto layout : {input_overlay::ControllerLayout::Xbox, input_overlay::ControllerLayout::PlayStation}) {
+                settings.controllerStyle = static_cast<input_overlay::ControllerStyle>(style);
+                settings.style = static_cast<input_overlay::OverlayStyle>(keyboardStyle);
+                settings.controllerLayout = layout;
+                Check(input_overlay::SaveSettings(file, settings), "Each controller design and layout must save");
+                input_overlay::Settings restored;
+                Check(input_overlay::LoadSettings(file, restored) && restored.controllerStyle == settings.controllerStyle &&
+                    restored.controllerLayout == layout && restored.style == settings.style &&
+                    restored.device == settings.device && restored.controllerIndex == 2 && restored.controllerDeadzone == 23,
+                    "Controller designs must round trip independently of keyboard styles and controller layout");
+                Check(!restored.enabled && restored.onlySelectedApps && restored.startMinimized && !restored.autoCheckUpdates &&
+                    restored.applications == settings.applications && restored.hotkeyVk == VK_F8 && restored.hotkeyModifiers == MOD_SHIFT &&
+                    restored.slots[SideSlot].input == 'Q' && restored.slots[QSlot].input == 0,
+                    "Changing controller design must preserve visibility restrictions, startup preferences and input bindings");
+                Check(restored.x == 83 && restored.y == 57 && restored.scale == 123 && restored.opacity == 64 &&
+                    restored.anchorRight && !restored.anchorBottom && restored.monitor == settings.monitor &&
+                    restored.isoLayout && !restored.showMouse && restored.colorTheme == settings.colorTheme &&
+                    restored.backgroundStart == settings.backgroundStart && restored.backgroundEnd == settings.backgroundEnd &&
+                    restored.gradientFillOpacity == 24 && restored.accent == settings.accent,
+                    "Changing controller design must preserve placement, scale, keyboard layout and color preferences");
+            }
+    for (const int invalid : {INT_MIN, -1, input_overlay::ControllerStyleCount, INT_MAX}) {
+        settings.controllerStyle = static_cast<input_overlay::ControllerStyle>(invalid);
+        input_overlay::NormalizeSettings(settings);
+        Check(settings.controllerStyle == input_overlay::ControllerStyle::Frost &&
+            settings.style == input_overlay::OverlayStyle::Gradient && !settings.enabled && settings.onlySelectedApps,
+            "Invalid controller designs must normalize to Frost without changing the keyboard style or visibility");
+        settings.controllerStyle = static_cast<input_overlay::ControllerStyle>(invalid);
+        Check(input_overlay::SaveSettings(file, settings) && static_cast<int>(settings.controllerStyle) == invalid,
+            "Saving an invalid controller design must normalize a copy of the settings");
+        input_overlay::Settings restored;
+        Check(input_overlay::LoadSettings(file, restored) && restored.controllerStyle == input_overlay::ControllerStyle::Frost &&
+            restored.style == input_overlay::OverlayStyle::Gradient && restored.applications == settings.applications,
+            "Saved invalid controller designs must recover to Frost and retain application restrictions");
+    }
+    for (const char* invalid : {"-2147483648", "-1", "3", "2147483647", "2147483648", "-2147483649", "1.5", "invalid", ""}) {
+        WriteBytes(file, std::string("[General]\nstyle=5\ndevice=1\ncontrollerLayout=1\nenabled=0\nonlySelectedApps=1\n") +
+            "controllerStyle=2\ncontrollerStyle=" + invalid + "\nscale=75\n");
+        Check(input_overlay::LoadSettings(file, settings) && settings.controllerStyle == input_overlay::ControllerStyle::Frost &&
+            settings.style == input_overlay::OverlayStyle::Gradient && settings.device == input_overlay::OverlayDevice::Controller &&
+            settings.controllerLayout == input_overlay::ControllerLayout::PlayStation &&
+            !settings.enabled && settings.onlySelectedApps && settings.scale == 75,
+            "Malformed stored controller designs must restore Frost without changing other saved preferences");
+    }
+    for (const int device : {0, 1}) {
+        WriteBytes(file, "[General]\nversion=1\nstyle=4\ncontrollerLayout=1\ncontrollerIndex=3\ncontrollerDeadzone=27\n"
+            "enabled=0\nonlySelectedApps=1\nstartMinimized=1\nscale=75\ndevice=" + std::to_string(device) + "\n");
+        settings.controllerStyle = input_overlay::ControllerStyle::Prism;
+        Check(input_overlay::LoadSettings(file, settings) && settings.controllerStyle == input_overlay::ControllerStyle::Frost &&
+            static_cast<int>(settings.device) == device && settings.controllerLayout == input_overlay::ControllerLayout::PlayStation &&
+            settings.controllerIndex == 3 && settings.controllerDeadzone == 27 && settings.style == input_overlay::OverlayStyle::Pearl &&
+            !settings.enabled && settings.onlySelectedApps && settings.startMinimized && settings.scale == 75,
+            "Existing settings without a controller design must gain Frost while preserving their saved mode and preferences");
+    }
+}
+
 void TestUpdatePreferences(const TemporaryDirectory& temp) {
     const auto file = temp.File(L"updates.ini");
     auto settings = input_overlay::DefaultSettings();
@@ -580,6 +664,7 @@ int main() {
         TestColorHex();
         TestStartupState(temp);
         TestControllerSettings(temp);
+        TestControllerStyles(temp);
         TestUpdatePreferences(temp);
         TestMalformed(temp);
         Check(!input_overlay::ExecutablePath().empty(), "Executable path must resolve");

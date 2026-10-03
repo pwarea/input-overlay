@@ -18,7 +18,7 @@
 #include "updates.hpp"
 
 #ifndef INPUT_OVERLAY_VERSION
-#define INPUT_OVERLAY_VERSION "0.2.0"
+#define INPUT_OVERLAY_VERSION "0.3.0"
 #endif
 #define INPUT_OVERLAY_WIDEN_IMPL(value) L##value
 #define INPUT_OVERLAY_WIDEN(value) INPUT_OVERLAY_WIDEN_IMPL(value)
@@ -46,6 +46,8 @@ enum class ColorTheme { Original = 0, Sunset = 1, Aurora = 2, Ocean = 3, Rose = 
 constexpr int ColorThemeCount = 6;
 enum class OverlayDevice { KeyboardMouse = 0, Controller = 1 };
 enum class ControllerLayout { Xbox = 0, PlayStation = 1 };
+enum class ControllerStyle { Air = 0, Frost = 1, Prism = 2 };
+constexpr int ControllerStyleCount = 3;
 
 struct Slot {
     std::wstring label;
@@ -62,6 +64,7 @@ struct Settings {
     OverlayStyle style = OverlayStyle::Pearl;
     OverlayDevice device = OverlayDevice::KeyboardMouse;
     ControllerLayout controllerLayout = ControllerLayout::Xbox;
+    ControllerStyle controllerStyle = ControllerStyle::Frost;
     int controllerIndex = -1, controllerDeadzone = 15;
     bool enabled = true, onlySelectedApps = false, showMouse = true;
     bool startMinimized = false;

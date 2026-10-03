@@ -114,11 +114,13 @@ bool PreviewChecks() {
 }
 
 bool Exercise(input_overlay::OverlayStyle style, int device, bool allSizes,
-              input_overlay::ColorTheme colorTheme = input_overlay::ColorTheme::Original) {
+              input_overlay::ColorTheme colorTheme = input_overlay::ColorTheme::Original,
+              input_overlay::ControllerStyle controllerStyle = input_overlay::ControllerStyle::Frost) {
     input_overlay::Overlay overlay;
     if (!Check(overlay.Create(GetModuleHandleW(nullptr), nullptr), "Overlay creation failed")) return false;
     input_overlay::Settings settings;
     settings.style = style;
+    settings.controllerStyle = controllerStyle;
     settings.colorTheme = colorTheme;
     settings.backgroundStart = RGB(0, 0, 0);
     settings.backgroundEnd = RGB(255, 255, 255);
@@ -204,16 +206,20 @@ bool Exercise(input_overlay::OverlayStyle style, int device, bool allSizes,
 int main() {
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     if (!PreviewChecks()) return 1;
-    for (int device = 0; device < 3; ++device)
-        for (int style = 0; style < input_overlay::OverlayStyleCount; ++style)
-            if (!Exercise(static_cast<input_overlay::OverlayStyle>(style), device, true)) return 1;
+    for (int style = 0; style < input_overlay::OverlayStyleCount; ++style)
+        if (!Exercise(static_cast<input_overlay::OverlayStyle>(style), 0, true)) return 1;
+    for (int device = 1; device < 3; ++device)
+        for (int style = 0; style < input_overlay::ControllerStyleCount; ++style)
+            if (!Exercise(input_overlay::OverlayStyle::Pearl, device, true,
+                          input_overlay::ColorTheme::Sunset, static_cast<input_overlay::ControllerStyle>(style))) return 1;
     const DWORD before = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS);
     const DWORD windowsBefore = GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS);
     for (int cycle = 0; cycle < 5; ++cycle)
         for (int device = 0; device < 3; ++device)
-            for (int style = 0; style < input_overlay::OverlayStyleCount; ++style)
-                if (!Exercise(static_cast<input_overlay::OverlayStyle>(style), device, false,
-                              static_cast<input_overlay::ColorTheme>(cycle + 1))) return 1;
+            for (int style = 0; style < (device == 0 ? input_overlay::OverlayStyleCount : input_overlay::ControllerStyleCount); ++style)
+                if (!Exercise(device == 0 ? static_cast<input_overlay::OverlayStyle>(style) : input_overlay::OverlayStyle::Pearl,
+                              device, false, static_cast<input_overlay::ColorTheme>(cycle + 1),
+                              device == 0 ? input_overlay::ControllerStyle::Frost : static_cast<input_overlay::ControllerStyle>(style))) return 1;
     const DWORD after = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS);
     const DWORD windowsAfter = GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS);
     if (!Check(after <= before, "GDI objects leaked across renderer lifecycles")) return 1;

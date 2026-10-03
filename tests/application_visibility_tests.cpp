@@ -173,6 +173,117 @@ struct Harness {
     }
 };
 
+void TestControllerAppearance(Harness& harness, HWND allowedWindow) {
+    auto& app = harness.app;
+    const Settings original = app.settings;
+    const HWND window = app.preferences.Handle();
+    const auto click = [window](int id) { SendMessageW(window, WM_COMMAND, MAKEWPARAM(id, BN_CLICKED), 0); };
+    const auto select = [window](int id, int selection) {
+        Check(GetDlgItem(window, id) != nullptr, "Controller appearance selector must exist");
+        Check(SendDlgItemMessageW(window, id, CB_SETCURSEL, selection, 0) != CB_ERR,
+            "Controller appearance selection must be available");
+        SendMessageW(window, WM_COMMAND, MAKEWPARAM(id, CBN_SELCHANGE), 0);
+    };
+    Focus(window);
+    click(NavOverlay);
+    select(AppearanceDevice, 0);
+    click(StyleFirst + static_cast<int>(OverlayStyle::Pearl));
+    Check(app.settings.device == OverlayDevice::KeyboardMouse, "Controller appearance tests must begin in keyboard and mouse mode");
+    for (const bool manuallyHidden : {false, true}) {
+        if (manuallyHidden) app.Toggle();
+        for (int design = 0; design < ControllerStyleCount; ++design) for (int layout = 0; layout < 2; ++layout) {
+            click(NavController);
+            Check(GetDlgItem(window, OverlayPreview) && GetDlgItem(window, ControllerAppearance) &&
+                GetDlgItem(window, ResetControllerStyle), "Controller page must expose the native preview, Colors and Reset style");
+            for (int id = ControllerStyleFirst; id <= ControllerStyleLast; ++id)
+                Check(GetDlgItem(window, id) != nullptr, "Controller page must expose every design");
+            click(ControllerStyleFirst + design);
+            select(ControllerLayoutChoice, layout);
+            Check(static_cast<int>(app.settings.controllerStyle) == design && static_cast<int>(app.settings.controllerLayout) == layout &&
+                app.settings.style == OverlayStyle::Pearl && app.settings.device == OverlayDevice::KeyboardMouse,
+                "Each controller design and layout must remain independent of keyboard style and active device");
+            Settings saved;
+            Check(LoadSettings(app.configPath, saved) && saved.controllerStyle == app.settings.controllerStyle &&
+                saved.controllerLayout == app.settings.controllerLayout && saved.style == OverlayStyle::Pearl &&
+                saved.device == OverlayDevice::KeyboardMouse && saved.enabled == !manuallyHidden &&
+                saved.onlySelectedApps && saved.applications == original.applications,
+                "Controller design and layout changes must persist without enabling a hidden overlay or erasing its filter");
+            harness.Expect(false, false, "Controller appearance changes must preserve application filtering and manual hide");
+            const std::string beforeColors = ReadConfiguration(app.configPath);
+            click(PreviewPressed);
+            click(PreviewBackground);
+            click(PreviewIdle);
+            Check(ReadConfiguration(app.configPath) == beforeColors,
+                "Controller page preview controls must not save live settings");
+            click(ControllerAppearance);
+            Check(SendDlgItemMessageW(window, AppearanceDevice, CB_GETCURSEL, 0, 0) == 1 &&
+                GetDlgItem(window, ControllerStyleFirst) && !GetDlgItem(window, StyleFirst) &&
+                app.settings.device == OverlayDevice::KeyboardMouse && ReadConfiguration(app.configPath) == beforeColors,
+                "Colors must open the controller appearance editor without activating controller mode or saving preferences");
+            select(PreviewLayout, 1 - layout);
+            click(PreviewPressed);
+            click(PreviewBackground);
+            click(PreviewIdle);
+            select(AppearanceDevice, 0);
+            Check(GetDlgItem(window, StyleFirst) && !GetDlgItem(window, ControllerStyleFirst),
+                "Keyboard appearance context must restore keyboard style controls");
+            select(PreviewLayout, original.isoLayout ? 0 : 1);
+            select(AppearanceDevice, 1);
+            Check(app.settings.controllerLayout == saved.controllerLayout && app.settings.isoLayout == original.isoLayout &&
+                app.settings.controllerStyle == saved.controllerStyle && app.settings.style == OverlayStyle::Pearl &&
+                app.settings.device == OverlayDevice::KeyboardMouse && ReadConfiguration(app.configPath) == beforeColors,
+                "Appearance context, preview layouts and preview states must remain transient and must not switch the live device");
+            Check(std::none_of(app.pressed.begin(), app.pressed.end(), [](bool down) { return down; }),
+                "Controller appearance previews must not create live keyboard or mouse input");
+            if (app.settings.controllerStyle == ControllerStyle::Prism) {
+                Check(GetDlgItem(window, StartHex) && GetDlgItem(window, EndHex) && GetDlgItem(window, GradientFillControl),
+                    "Prism must expose gradient colors and fill even when the keyboard style is Pearl");
+                click(ThemeFirst + static_cast<int>(ColorTheme::Ocean));
+                SetDlgItemTextW(window, StartHex, L"#225588");
+                SetDlgItemTextW(window, EndHex, L"#EEAA66");
+                const HWND fill = GetDlgItem(window, GradientFillControl);
+                SendMessageW(fill, TBM_SETPOS, TRUE, 31);
+                SendMessageW(window, WM_HSCROLL, TB_ENDTRACK, reinterpret_cast<LPARAM>(fill));
+                Check(app.settings.colorTheme == ColorTheme::Custom && app.settings.backgroundStart == RGB(34, 85, 136) &&
+                    app.settings.backgroundEnd == RGB(238, 170, 102) && app.settings.gradientFillOpacity == 31 &&
+                    app.settings.style == OverlayStyle::Pearl && app.settings.device == OverlayDevice::KeyboardMouse,
+                    "Prism HEX and fill edits must apply while retaining keyboard style and live device");
+            } else {
+                Check(GetDlgItem(window, PressedColor) && !GetDlgItem(window, StartHex) && !GetDlgItem(window, GradientFillControl),
+                    "Air and Frost must expose their pressed color without Prism-only controls");
+            }
+            harness.Expect(false, false, "Controller color and preview edits must preserve filtering and manual hide");
+        }
+        const Settings beforeReset = app.settings;
+        click(ResetControllerStyle);
+        Check(app.settings.controllerStyle == ControllerStyle::Frost && app.settings.style == OverlayStyle::Pearl &&
+            app.settings.device == OverlayDevice::KeyboardMouse && app.settings.controllerLayout == beforeReset.controllerLayout &&
+            app.settings.colorTheme == beforeReset.colorTheme && app.settings.backgroundStart == beforeReset.backgroundStart &&
+            app.settings.backgroundEnd == beforeReset.backgroundEnd && app.settings.gradientFillOpacity == beforeReset.gradientFillOpacity,
+            "Reset style must restore only the controller design while retaining selected layout and custom colors");
+        select(AppearanceDevice, 0);
+        click(StyleFirst + static_cast<int>(OverlayStyle::Neon));
+        Check(app.settings.style == OverlayStyle::Neon && app.settings.controllerStyle == ControllerStyle::Frost,
+            "Changing keyboard style must not change the controller design");
+        click(StyleFirst + static_cast<int>(OverlayStyle::Pearl));
+        Check(app.settings.enabled == !manuallyHidden && app.settings.onlySelectedApps &&
+            app.settings.applications == original.applications && app.settings.x == original.x && app.settings.y == original.y &&
+            app.settings.scale == original.scale && app.settings.opacity == original.opacity && app.settings.monitor == original.monitor &&
+            app.settings.anchorRight == original.anchorRight && app.settings.anchorBottom == original.anchorBottom,
+            "Controller appearance controls must preserve visibility, application restrictions and placement");
+        Focus(allowedWindow);
+        app.UpdateVisibility();
+        harness.Expect(!manuallyHidden, false, "An allowlisted window must still respect manual hide after controller appearance edits");
+        Focus(window);
+        app.UpdateVisibility();
+        harness.Expect(false, false, "Returning to Settings must preserve the application filter after controller appearance edits");
+    }
+    app.settings = original;
+    app.Changed();
+    click(NavOverlay);
+    select(AppearanceDevice, 0);
+}
+
 void RunTests() {
     Desktop desktop;
     TemporaryDirectory directory;
@@ -253,6 +364,7 @@ void RunTests() {
         app.settings.monitor == beforeGradient.monitor && app.settings.scale == beforeGradient.scale && app.settings.opacity == beforeGradient.opacity &&
         app.settings.accent == beforeGradient.accent && app.settings.isoLayout == beforeGradient.isoLayout,
         "Gradient editing and reset must preserve application restrictions, visibility, layout, position, size, overall opacity, and pressed accent");
+    TestControllerAppearance(harness, allowed.window);
     SendMessageW(settingsWindow, WM_COMMAND, MAKEWPARAM(NavLayout, BN_CLICKED), 0);
     Check(GetDlgItem(settingsWindow, Scale) && GetDlgItem(settingsWindow, Opacity) && GetDlgItem(settingsWindow, MoveOverlay) &&
         GetDlgItem(settingsWindow, ResetPosition) && GetDlgItem(settingsWindow, Enabled) && GetDlgItem(settingsWindow, Layout),

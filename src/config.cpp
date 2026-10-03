@@ -179,6 +179,8 @@ void NormalizeSettings(Settings& settings) {
         settings.device = OverlayDevice::KeyboardMouse;
     if (settings.controllerLayout != ControllerLayout::Xbox && settings.controllerLayout != ControllerLayout::PlayStation)
         settings.controllerLayout = ControllerLayout::Xbox;
+    if (static_cast<int>(settings.controllerStyle) < 0 || static_cast<int>(settings.controllerStyle) >= ControllerStyleCount)
+        settings.controllerStyle = ControllerStyle::Frost;
     if (settings.controllerIndex < -1 || settings.controllerIndex > 3) settings.controllerIndex = -1;
     settings.controllerDeadzone = std::clamp(settings.controllerDeadzone, 0, 40);
     if (settings.monitor.size() >= CCHDEVICENAME || !ValidUnicode(settings.monitor) ||
@@ -261,6 +263,11 @@ bool LoadSettings(const std::wstring& file, Settings& settings) {
                 settings.controllerLayout = numeric && number == 1 ? ControllerLayout::PlayStation : ControllerLayout::Xbox;
                 continue;
             }
+            if (key == L"controllerStyle") {
+                settings.controllerStyle = numeric && number >= 0 && number < ControllerStyleCount
+                    ? static_cast<ControllerStyle>(number) : ControllerStyle::Frost;
+                continue;
+            }
             if (key == L"controllerIndex") {
                 settings.controllerIndex = numeric && number >= -1 && number <= 3 ? number : -1;
                 continue;
@@ -322,6 +329,7 @@ bool SaveSettings(const std::wstring& file, const Settings& settings) {
         << L"\r\nbackgroundStart=" << clean.backgroundStart << L"\r\nbackgroundEnd=" << clean.backgroundEnd
         << L"\r\ndevice=" << static_cast<int>(clean.device)
         << L"\r\ncontrollerLayout=" << static_cast<int>(clean.controllerLayout)
+        << L"\r\ncontrollerStyle=" << static_cast<int>(clean.controllerStyle)
         << L"\r\ncontrollerIndex=" << clean.controllerIndex << L"\r\ncontrollerDeadzone=" << clean.controllerDeadzone
         << L"\r\nstartMinimized=" << clean.startMinimized
         << L"\r\nautoCheckUpdates=" << clean.autoCheckUpdates

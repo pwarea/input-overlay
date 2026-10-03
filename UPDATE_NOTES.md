@@ -1,5 +1,6 @@
-- Added a dedicated Gradient style with transparent fills, always-visible color, thin gradient edges, and clear pressed inputs.
-- Added Sunset, Aurora, Ocean, and Rose presets with two-color gradient swatches, plus saved custom colors.
-- Added a full-spectrum color picker, editable HEX colors, gradient color swapping, fill opacity, and Reset Gradient.
-- Added a live settings preview with idle and pressed inputs, light and dark backgrounds, and ANSI or ISO layouts.
-- Gradient preferences are saved locally without changing application filters, bindings, overlay position, or visibility.
+- Redesigned the Xbox and DualSense controller silhouettes, grips, sticks, face buttons, and shoulder controls.
+- Added three independent controller designs: Air, Frost, and Prism, with transparent surfaces and responsive input highlights.
+- Added a glass touchpad surface to the DualSense appearance and distinct input layouts for each controller.
+- Added controller design previews with idle and pressed states and light or dark backgrounds.
+- Prism supports Sunset, Aurora, Ocean, Rose, custom HEX colors, and adjustable transparent fill.
+- Controller design choices are remembered without changing keyboard styles, bindings, application filters, position, or visibility.

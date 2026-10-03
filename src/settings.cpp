@@ -20,11 +20,12 @@ enum ControlId {
     NavOverlay = 100, NavBindings, NavApplications, NavGeneral, NavController, NavUpdates, NavLayout,
     Enabled = 200, MouseVisible, Scale, ScaleValue, Opacity, OpacityValue,
     MoveOverlay, Layout, ResetPosition, OpenLayout, AccentFirst = 220, AccentLast = 224, StyleFirst = 230, StyleLast = StyleFirst + OverlayStyleCount - 1,
-    OverlayPreview = 240, PreviewIdle, PreviewPressed, PreviewBackground, PreviewLayout,
+    OverlayPreview = 240, PreviewIdle, PreviewPressed, PreviewBackground, PreviewLayout, AppearanceDevice,
     SlotList = 300, SlotTitle, SlotVisible, LabelEdit, SaveLabel, InputValue, RecordInput, UnbindInput, ResetBinding,
     RestrictApps = 400, WindowList, RefreshWindows, AddWindow, AllowedList, RemoveApp, WindowPath,
     HotkeyValue = 500, ModCtrl, ModAlt, ModShift, ModWin, RecordHotkey, Startup, StartMinimized,
     ControllerMode = 600, ControllerLayoutChoice, ControllerIndex, ControllerDeadzone, ControllerDeadzoneValue,
+    ControllerAppearance, ResetControllerStyle, ControllerStyleFirst = 620, ControllerStyleLast = ControllerStyleFirst + ControllerStyleCount - 1,
     AutoCheckUpdates = 700, CheckUpdates, InstallUpdate, UpdateVersion, UpdateMessage, UpdateNotesTitle, UpdateNotes,
     ThemeFirst = 800, ThemeLast = ThemeFirst + ColorThemeCount - 1, BackgroundStart = 820, BackgroundEnd, PressedColor,
     StartHex, EndHex, SwapGradient, GradientFillControl, GradientFillValue, ResetGradient, GradientStrip,
@@ -32,6 +33,7 @@ enum ControlId {
 };
 const std::array<COLORREF, 5> Accents{{RGB(125, 211, 252), RGB(167, 139, 250), RGB(110, 231, 183), RGB(251, 191, 36), RGB(251, 113, 133)}};
 const wchar_t* StyleNames[] = {L"Outline", L"Neon", L"Glass", L"Circuit", L"Pearl", L"Gradient"};
+const wchar_t* ControllerStyleNames[] = {L"Air", L"Frost", L"Prism"};
 const wchar_t* ThemeNames[] = {L"Original", L"Sunset", L"Aurora", L"Ocean", L"Rose", L"Custom"};
 const wchar_t* PageTitles[] = {L"Overlay", L"Bindings", L"Applications", L"General", L"Controller", L"Updates", L"Layout"};
 const wchar_t* PageSubtitles[] = {
@@ -50,9 +52,14 @@ struct UiState {
     int selectedSlot = 0;
     bool updating = false;
     bool previewPressed = false, previewLight = false, previewIso = false;
+    bool appearanceController = false;
+    ControllerLayout previewControllerLayout = ControllerLayout::Xbox;
     std::wstring status;
 };
 UiState ui;
+bool GradientAppearance(const Settings& settings, bool controller) {
+    return controller ? settings.controllerStyle == ControllerStyle::Prism : settings.style == OverlayStyle::Gradient;
+}
 int Px(int value) { return MulDiv(value, static_cast<int>(ui.dpi), 96); }
 HFONT MakeFont(int size, int weight) {
     return CreateFontW(-Px(size), 0, 0, 0, weight, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
@@ -210,6 +217,8 @@ bool SettingsWindow::Show(Application& app) {
     app_ = &app;
     if (!hwnd_) {
         ui.previewPressed = false; ui.previewLight = false; ui.previewIso = app.settings.isoLayout;
+        ui.appearanceController = app.settings.device == OverlayDevice::Controller;
+        ui.previewControllerLayout = app.settings.controllerLayout;
         WNDCLASSEXW wc{}; wc.cbSize = sizeof(wc);
         wc.lpfnWndProc = WndProc; wc.hInstance = GetModuleHandleW(nullptr);
         wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
@@ -275,18 +284,26 @@ void SettingsWindow::Build() {
     text(L"Changes save automatically.", 216, 638, 400, 20, 0, true, ui.smallFont);
     text(ui.status.c_str(), 216, 613, 578, 22, Status, true, ui.smallFont);
     if (page_ == 0) {
-        text(L"Visual style", 216, 113, 360, 25, 0, false, ui.heading);
+        text(L"Visual style", 216, 113, 152, 25, 0, false, ui.heading);
+        HWND appearance = add(L"COMBOBOX", L"Appearance device", WS_TABSTOP | CBS_DROPDOWNLIST, 386, 110, 246, 120, AppearanceDevice);
+        SendMessageW(appearance, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Keyboard & mouse"));
+        SendMessageW(appearance, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Controller"));
         button(L"Size & position", 650, 108, 144, 30, OpenLayout);
-        for (int i = 0; i < OverlayStyleCount; ++i) button(StyleNames[i], 216 + i * 98, 149, 88, 36, StyleFirst + i);
+        if (ui.appearanceController) {
+            for (int i = 0; i < ControllerStyleCount; ++i) button(ControllerStyleNames[i], 216 + i * 149, 149, 137, 36, ControllerStyleFirst + i);
+            button(L"Reset style", 663, 149, 131, 36, ResetControllerStyle);
+        } else {
+            for (int i = 0; i < OverlayStyleCount; ++i) button(StyleNames[i], 216 + i * 98, 149, 88, 36, StyleFirst + i);
+        }
         add(L"STATIC", L"Overlay appearance preview", SS_OWNERDRAW, 216, 198, 578, 176, OverlayPreview);
         button(L"Idle", 216, 382, 62, 30, PreviewIdle);
         button(L"Pressed", 286, 382, 80, 30, PreviewPressed);
         button(L"Dark background", 418, 382, 158, 30, PreviewBackground);
-        text(L"Layout", 598, 387, 51, 22, 0, true, ui.smallFont);
-        HWND previewLayout = add(L"COMBOBOX", L"Preview keyboard layout", WS_TABSTOP | CBS_DROPDOWNLIST, 658, 383, 136, 120, PreviewLayout);
-        SendMessageW(previewLayout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"ANSI"));
-        SendMessageW(previewLayout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"ISO"));
-        if (app_->settings.style == OverlayStyle::Gradient) {
+        text(L"Preview", 598, 387, 51, 22, 0, true, ui.smallFont);
+        HWND previewLayout = add(L"COMBOBOX", L"Preview layout", WS_TABSTOP | CBS_DROPDOWNLIST, 658, 383, 136, 120, PreviewLayout);
+        SendMessageW(previewLayout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(ui.appearanceController ? L"Xbox" : L"ANSI"));
+        SendMessageW(previewLayout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(ui.appearanceController ? L"DualSense" : L"ISO"));
+        if (GradientAppearance(app_->settings, ui.appearanceController)) {
             text(L"Gradient presets", 216, 431, 276, 25, 0, false, ui.heading);
             text(L"Gradient colors", 512, 431, 144, 25, 0, false, ui.heading);
             button(L"Reset Gradient", 659, 427, 135, 30, ResetGradient);
@@ -356,34 +373,33 @@ void SettingsWindow::Build() {
             216, 531, 578, 49, 0, true);
     } else if (page_ == 4) {
         checkbox(L"Show controller instead of keyboard and mouse", 216, 113, 578, ControllerMode);
-        text(L"Controller layout", 216, 163, 276, 25, 0, false, ui.heading);
-        HWND layout = add(L"COMBOBOX", L"Controller layout", WS_TABSTOP | CBS_DROPDOWNLIST,
-            498, 160, 296, 120, ControllerLayoutChoice);
+        for (int i = 0; i < ControllerStyleCount; ++i) button(ControllerStyleNames[i], 216 + i * 126, 153, 114, 36, ControllerStyleFirst + i);
+        button(L"Colors", 604, 153, 90, 36, ControllerAppearance);
+        button(L"Reset style", 704, 153, 90, 36, ResetControllerStyle);
+        add(L"STATIC", L"Controller appearance preview", SS_OWNERDRAW, 216, 207, 578, 198, OverlayPreview);
+        button(L"Idle", 216, 417, 62, 30, PreviewIdle);
+        button(L"Pressed", 286, 417, 80, 30, PreviewPressed);
+        button(L"Dark background", 418, 417, 158, 30, PreviewBackground);
+        text(L"Layout", 598, 422, 51, 22, 0, true, ui.smallFont);
+        HWND layout = add(L"COMBOBOX", L"Controller layout", WS_TABSTOP | CBS_DROPDOWNLIST, 658, 418, 136, 120, ControllerLayoutChoice);
         SendMessageW(layout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Xbox"));
-        SendMessageW(layout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"PlayStation"));
-        text(L"Changes the button symbols shown on the overlay.", 216, 204, 578, 22, 0, true, ui.smallFont);
-        text(L"Controller", 216, 249, 276, 25, 0, false, ui.heading);
+        SendMessageW(layout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"DualSense"));
+        text(L"Input device", 216, 473, 126, 25, 0, false, ui.heading);
         HWND controller = add(L"COMBOBOX", L"Controller", WS_TABSTOP | CBS_DROPDOWNLIST,
-            498, 246, 296, 190, ControllerIndex);
+            354, 470, 184, 190, ControllerIndex);
         SendMessageW(controller, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Auto"));
         for (int i = 1; i <= 4; ++i) {
             const std::wstring label = L"Controller " + std::to_wstring(i);
             SendMessageW(controller, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label.c_str()));
         }
-        text(L"Auto uses the first connected XInput controller. Choose a number to use a specific controller.",
-            216, 291, 578, 42, 0, true, ui.smallFont);
-        text(L"Stick deadzone", 216, 350, 460, 25, 0, false, ui.heading);
-        text(L"", 724, 350, 70, 24, ControllerDeadzoneValue, true);
+        text(L"Auto uses the first connected XInput controller.", 556, 470, 238, 36, 0, true, ui.smallFont);
+        text(L"Requires XInput compatibility. DualSense changes the appearance only.", 216, 514, 578, 20, 0, true, ui.smallFont);
+        text(L"Stick deadzone", 216, 543, 460, 25, 0, false, ui.heading);
+        text(L"", 724, 543, 70, 24, ControllerDeadzoneValue, true);
         HWND deadzone = add(TRACKBAR_CLASSW, L"Stick deadzone", WS_TABSTOP | TBS_HORZ | TBS_NOTICKS,
-            208, 385, 590, 34, ControllerDeadzone);
+            208, 575, 590, 30, ControllerDeadzone);
         SendMessageW(deadzone, TBM_SETRANGE, TRUE, MAKELPARAM(0, 40));
         SendMessageW(deadzone, TBM_SETPAGESIZE, 0, 5);
-        text(L"Ignore small stick movements around the center. Lower values show finer movements.",
-            216, 430, 578, 22, 0, true, ui.smallFont);
-        text(L"Bindings customizes keyboard and mouse inputs only.", 216, 461, 578, 21, 0, true, ui.smallFont);
-        text(L"Device compatibility", 216, 492, 578, 26, 0, false, ui.heading);
-        text(L"Requires an XInput-compatible controller. PlayStation layout changes the appearance; it does not add native PlayStation device support.",
-            216, 532, 578, 48, 0, true);
     } else if (page_ == 5) {
         text(L"Installed version", 216, 115, 578, 25, 0, false, ui.heading);
         text(L"", 216, 151, 578, 29, UpdateVersion, true);
@@ -433,12 +449,17 @@ void SettingsWindow::UpdateControls() {
     if (!hwnd_ || !app_ || ui.updating) return;
     ui.updating = true;
     Settings& settings = app_->settings;
-    if (page_ == 0) {
-        for (int i = StyleFirst; i <= StyleLast; ++i) InvalidateControl(hwnd_, i);
+    if (page_ == 0 || page_ == 4) {
+        for (int i = ControllerStyleFirst; i <= ControllerStyleLast; ++i) InvalidateControl(hwnd_, i);
         for (int id : {OverlayPreview, PreviewIdle, PreviewPressed, PreviewBackground}) InvalidateControl(hwnd_, id);
         SetText(hwnd_, PreviewBackground, ui.previewLight ? L"Light background" : L"Dark background");
-        SendDlgItemMessageW(hwnd_, PreviewLayout, CB_SETCURSEL, ui.previewIso ? 1 : 0, 0);
-        if (settings.style == OverlayStyle::Gradient) {
+    }
+    if (page_ == 0) {
+        for (int i = StyleFirst; i <= StyleLast; ++i) InvalidateControl(hwnd_, i);
+        SendDlgItemMessageW(hwnd_, AppearanceDevice, CB_SETCURSEL, ui.appearanceController ? 1 : 0, 0);
+        SendDlgItemMessageW(hwnd_, PreviewLayout, CB_SETCURSEL,
+            ui.appearanceController ? static_cast<int>(ui.previewControllerLayout) : ui.previewIso ? 1 : 0, 0);
+        if (GradientAppearance(settings, ui.appearanceController)) {
             const auto palette = ThemePalette(settings);
             if (GetFocus() != GetDlgItem(hwnd_, StartHex)) SetText(hwnd_, StartHex, ColorHex(palette.start));
             if (GetFocus() != GetDlgItem(hwnd_, EndHex)) SetText(hwnd_, EndHex, ColorHex(palette.end));
@@ -562,7 +583,7 @@ void SettingsWindow::Command(int id, int code) {
     if (id >= NavOverlay && id <= NavLayout) { SelectPage(id - NavOverlay); return; }
     Settings& settings = app_->settings;
     if (id >= ThemeFirst && id <= ThemeLast) {
-        if (code != BN_CLICKED || settings.style != OverlayStyle::Gradient || id == ThemeFirst) return;
+        if (code != BN_CLICKED || !GradientAppearance(settings, ui.appearanceController) || id == ThemeFirst) return;
         settings.colorTheme = static_cast<ColorTheme>(id - ThemeFirst);
         ui.status.clear(); app_->Changed(); UpdateControls(); return;
     }
@@ -571,11 +592,33 @@ void SettingsWindow::Command(int id, int code) {
         settings.style = static_cast<OverlayStyle>(id - StyleFirst);
         ui.status.clear(); Build(); app_->Changed(); SetFocus(GetDlgItem(hwnd_, id)); return;
     }
+    if (id >= ControllerStyleFirst && id <= ControllerStyleLast) {
+        if (code != BN_CLICKED) return;
+        settings.controllerStyle = static_cast<ControllerStyle>(id - ControllerStyleFirst);
+        ui.status.clear(); Build(); app_->Changed(); SetFocus(GetDlgItem(hwnd_, id)); return;
+    }
     if (id >= AccentFirst && id <= AccentLast) {
         settings.accent = Accents[static_cast<size_t>(id - AccentFirst)]; app_->Changed(); UpdateControls(); return;
     }
     switch (id) {
     case OpenLayout: SelectPage(6); return;
+    case AppearanceDevice: {
+        if (code != CBN_SELCHANGE) return;
+        const LRESULT selected = SendDlgItemMessageW(hwnd_, AppearanceDevice, CB_GETCURSEL, 0, 0);
+        if (selected < 0 || selected > 1) return;
+        ui.appearanceController = selected == 1;
+        ui.status.clear(); Build(); SetFocus(GetDlgItem(hwnd_, AppearanceDevice)); return;
+    }
+    case ControllerAppearance:
+        if (code != BN_CLICKED) return;
+        ui.appearanceController = true;
+        ui.previewControllerLayout = settings.controllerLayout;
+        SelectPage(0); return;
+    case ResetControllerStyle:
+        if (code != BN_CLICKED) return;
+        settings.controllerStyle = DefaultSettings().controllerStyle;
+        ui.status = L"Controller style reset to Frost.";
+        Build(); app_->Changed(); SetFocus(GetDlgItem(hwnd_, ResetControllerStyle)); return;
     case PreviewIdle: case PreviewPressed:
         if (code != BN_CLICKED) return;
         ui.previewPressed = id == PreviewPressed; UpdateControls(); return;
@@ -584,11 +627,12 @@ void SettingsWindow::Command(int id, int code) {
         ui.previewLight = !ui.previewLight; UpdateControls(); return;
     case PreviewLayout:
         if (code != CBN_SELCHANGE) return;
-        ui.previewIso = SendDlgItemMessageW(hwnd_, PreviewLayout, CB_GETCURSEL, 0, 0) == 1;
+        if (ui.appearanceController) ui.previewControllerLayout = static_cast<ControllerLayout>(SendDlgItemMessageW(hwnd_, PreviewLayout, CB_GETCURSEL, 0, 0));
+        else ui.previewIso = SendDlgItemMessageW(hwnd_, PreviewLayout, CB_GETCURSEL, 0, 0) == 1;
         InvalidateControl(hwnd_, OverlayPreview); return;
     case StartHex: case EndHex: {
         if (code != EN_CHANGE && code != EN_KILLFOCUS) return;
-        if (settings.style != OverlayStyle::Gradient) return;
+        if (!GradientAppearance(settings, ui.appearanceController)) return;
         COLORREF chosen = 0;
         const bool valid = ParseColorHex(Text(hwnd_, id), chosen);
         if (code == EN_KILLFOCUS) {
@@ -612,14 +656,14 @@ void SettingsWindow::Command(int id, int code) {
         UpdateControls(); return;
     }
     case SwapGradient: {
-        if (code != BN_CLICKED || settings.style != OverlayStyle::Gradient) return;
+        if (code != BN_CLICKED || !GradientAppearance(settings, ui.appearanceController)) return;
         const auto palette = ThemePalette(settings);
         settings.backgroundStart = palette.end; settings.backgroundEnd = palette.start;
         settings.colorTheme = ColorTheme::Custom;
         ui.status.clear(); app_->Changed(); break;
     }
     case ResetGradient: {
-        if (code != BN_CLICKED || settings.style != OverlayStyle::Gradient) return;
+        if (code != BN_CLICKED || !GradientAppearance(settings, ui.appearanceController)) return;
         const auto defaults = DefaultSettings();
         settings.backgroundStart = defaults.backgroundStart; settings.backgroundEnd = defaults.backgroundEnd;
         settings.gradientFillOpacity = defaults.gradientFillOpacity; settings.colorTheme = ColorTheme::Sunset;
@@ -738,6 +782,7 @@ void SettingsWindow::Command(int id, int code) {
     case ControllerMode:
         if (code != BN_CLICKED) return;
         settings.device = Checked(hwnd_, ControllerMode) ? OverlayDevice::Controller : OverlayDevice::KeyboardMouse;
+        ui.appearanceController = settings.device == OverlayDevice::Controller;
         ui.status = settings.device == OverlayDevice::Controller ? L"Controller view enabled." : L"Keyboard and mouse view enabled.";
         app_->Changed(); break;
     case ControllerLayoutChoice: {
@@ -745,6 +790,7 @@ void SettingsWindow::Command(int id, int code) {
         const LRESULT selected = SendDlgItemMessageW(hwnd_, ControllerLayoutChoice, CB_GETCURSEL, 0, 0);
         if (selected < 0 || selected > 1) return;
         settings.controllerLayout = static_cast<ControllerLayout>(selected);
+        ui.previewControllerLayout = settings.controllerLayout;
         app_->Changed(); break;
     }
     case ControllerIndex: {
@@ -868,7 +914,10 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wParam,
         auto* item = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
         if (item->CtlType == ODT_STATIC && item->CtlID == OverlayPreview) {
             Settings preview = self->app_->settings;
+            const bool controller = self->page_ == 4 || ui.appearanceController;
+            preview.device = controller ? OverlayDevice::Controller : OverlayDevice::KeyboardMouse;
             preview.isoLayout = ui.previewIso;
+            if (controller && self->page_ != 4) preview.controllerLayout = ui.previewControllerLayout;
             if (HWND fill = GetDlgItem(hwnd, GradientFillControl)) preview.gradientFillOpacity = static_cast<int>(SendMessageW(fill, TBM_GETPOS, 0, 0));
             DrawOverlayPreview(item->hDC, item->rcItem, preview, ui.previewPressed, ui.previewLight);
             return TRUE;
@@ -882,30 +931,33 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wParam,
         if (item->CtlType != ODT_BUTTON) break;
         const bool nav = item->CtlID >= NavOverlay && item->CtlID <= NavLayout;
         const bool styleCard = item->CtlID >= StyleFirst && item->CtlID <= StyleLast;
+        const bool controllerStyleCard = item->CtlID >= ControllerStyleFirst && item->CtlID <= ControllerStyleLast;
         const bool themeCard = item->CtlID >= ThemeFirst && item->CtlID <= ThemeLast;
         const bool colorButton = item->CtlID >= BackgroundStart && item->CtlID <= PressedColor;
         const ColorTheme activeTheme = self->app_->settings.colorTheme == ColorTheme::Original ? ColorTheme::Sunset : self->app_->settings.colorTheme;
         const bool selected = (nav && static_cast<int>(item->CtlID - NavOverlay) == self->page_) ||
             (styleCard && static_cast<int>(item->CtlID - StyleFirst) == static_cast<int>(self->app_->settings.style)) ||
+            (controllerStyleCard && static_cast<int>(item->CtlID - ControllerStyleFirst) == static_cast<int>(self->app_->settings.controllerStyle)) ||
             (themeCard && static_cast<int>(item->CtlID - ThemeFirst) == static_cast<int>(activeTheme)) ||
             (item->CtlID == PreviewIdle && !ui.previewPressed) || (item->CtlID == PreviewPressed && ui.previewPressed);
-        const COLORREF accent = self->app_->settings.style == OverlayStyle::Gradient ? ThemePalette(self->app_->settings).middle : self->app_->settings.accent;
+        const bool controllerAppearance = self->page_ == 4 || (self->page_ == 0 && ui.appearanceController);
+        const COLORREF accent = GradientAppearance(self->app_->settings, controllerAppearance) ? ThemePalette(self->app_->settings).middle : self->app_->settings.accent;
         const bool primary = GetPropW(item->hwndItem, L"InputOverlay.Primary") != nullptr;
         const bool swatch = item->CtlID >= AccentFirst && item->CtlID <= AccentLast;
         COLORREF fill = selected ? RGB(30, 49, 64) : (nav ? Sidebar : Surface);
         COLORREF textColor = selected || primary ? Blue : Foreground;
-        if (styleCard && selected) { fill = Tint(Background, accent, 12); textColor = accent; }
+        if ((styleCard || controllerStyleCard) && selected) { fill = Tint(Background, accent, 12); textColor = Foreground; }
         if (item->itemState & ODS_SELECTED) fill = RGB(48, 65, 83);
         if (item->itemState & ODS_DISABLED) textColor = Muted;
         Fill(item->hDC, item->rcItem, nav || item->CtlID == ExitApp ? Sidebar : Background);
-        const COLORREF edge = selected ? (styleCard ? accent : RGB(50, 93, 118)) : (nav ? Sidebar : Border);
+        const COLORREF edge = selected ? ((styleCard || controllerStyleCard) ? accent : RGB(50, 93, 118)) : (nav ? Sidebar : Border);
         HBRUSH brush = CreateSolidBrush(fill); HPEN pen = CreatePen(PS_SOLID, 1, edge);
         HGDIOBJ oldBrush = SelectObject(item->hDC, brush); HGDIOBJ oldPen = SelectObject(item->hDC, pen);
         RoundRect(item->hDC, item->rcItem.left, item->rcItem.top, item->rcItem.right, item->rcItem.bottom, Px(10), Px(10));
         SelectObject(item->hDC, oldBrush); SelectObject(item->hDC, oldPen); DeleteObject(brush); DeleteObject(pen);
         RECT labelRect = item->rcItem; UINT align = DT_CENTER;
         if (nav) { labelRect.left += Px(15); align = DT_LEFT; }
-        if (styleCard) { labelRect.left += Px(4); labelRect.right -= Px(4); }
+        if (styleCard || controllerStyleCard) { labelRect.left += Px(4); labelRect.right -= Px(4); }
         if (themeCard) {
             auto preview = self->app_->settings;
             preview.colorTheme = static_cast<ColorTheme>(item->CtlID - ThemeFirst);
