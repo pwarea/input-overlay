@@ -2,7 +2,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$ExecutablePath,
     [ValidatePattern('^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$')]
-    [string]$Version = '0.1.0',
+    [string]$Version = '0.1.1',
     [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9 _-]{0,63}$')]
     [string]$Name = 'Input Overlay',
     [string]$OutputDirectory = ''

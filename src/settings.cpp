@@ -388,6 +388,7 @@ void SettingsWindow::Build() {
 
 void SettingsWindow::SelectPage(int page) {
     if (page < 0 || page > 5 || page == page_) return;
+    if (app_->overlay.Editing()) app_->EditPosition(false);
     CancelCapture(); page_ = page; ui.status.clear(); Build(); SetFocus(GetDlgItem(hwnd_, NavOverlay + page_));
 }
 void SettingsWindow::UpdateControls() {
@@ -521,8 +522,8 @@ void SettingsWindow::Command(int id, int code) {
         settings.isoLayout = SendDlgItemMessageW(hwnd_, Layout, CB_GETCURSEL, 0, 0) == 1; app_->Changed();
         break;
     case MoveOverlay:
+        ui.status.clear();
         app_->EditPosition(!app_->overlay.Editing());
-        ui.status = app_->overlay.Editing() ? L"Position mode is active. Drag the overlay to move it." : L"Overlay position saved.";
         UpdateControls(); break;
     case ResetPosition:
         settings.x = settings.y = 32; settings.anchorRight = false; settings.anchorBottom = true;
@@ -665,6 +666,13 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wParam,
         return 0;
     case WM_CLOSE:
         self->CancelCapture(); self->app_->EditPosition(false); ShowWindow(hwnd, SW_HIDE); return 0;
+    case WM_ACTIVATE:
+        if (LOWORD(wParam) == WA_INACTIVE && self->app_ && self->app_->overlay.Editing() &&
+            reinterpret_cast<HWND>(lParam) != self->app_->overlay.Handle()) self->app_->EditPosition(false);
+        break;
+    case WM_SIZE:
+        if (wParam == SIZE_MINIMIZED && self->app_ && self->app_->overlay.Editing()) self->app_->EditPosition(false);
+        break;
     case WM_DESTROY:
         self->captureSlot_ = -1; self->controls_.clear(); FreeFonts();
         if (ui.background) DeleteObject(ui.background); if (ui.surface) DeleteObject(ui.surface);

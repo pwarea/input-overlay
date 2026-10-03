@@ -193,7 +193,13 @@ void Application::Toggle() {
 }
 
 void Application::UpdateVisibility() {
-    const bool allowed = MatchesApplication(settings, ProcessPath(GetForegroundWindow()));
+    const HWND foreground = GetForegroundWindow();
+    const HWND settingsWindow = preferences.Handle();
+    const bool positionPreview = !sessionLocked && settingsWindow && IsWindowVisible(settingsWindow) &&
+        !IsIconic(settingsWindow) && (foreground == settingsWindow || foreground == overlay.Handle());
+    const bool endPositioning = overlay.Editing() && !positionPreview;
+    if (endPositioning) overlay.SetEditing(false);
+    const bool allowed = MatchesApplication(settings, ProcessPath(foreground));
     const bool show = !sessionLocked && (overlay.Editing() || (settings.enabled && allowed));
     if (show != visible_) {
         visible_ = show;
@@ -203,6 +209,7 @@ void Application::UpdateVisibility() {
     overlay.SetVisible(show);
     SyncInputRegistration();
     SyncControllerPolling();
+    if (endPositioning) preferences.Refresh();
 }
 
 void Application::SyncInputRegistration() {
@@ -260,10 +267,12 @@ void Application::SetPosition(int x, int y) {
 }
 
 void Application::EditPosition(bool edit) {
+    if (edit) ShowSettings();
     overlay.SetEditing(edit);
     UpdateVisibility();
     overlay.Render(ResolvedSettings(settings), pressed, controllerState);
     UpdateTray();
+    preferences.Refresh();
 }
 
 bool Application::SetHotkey(UINT modifiers, UINT vk) {
@@ -462,11 +471,12 @@ void Application::UpdateTray() {
 }
 
 void Application::TrayMenu() {
+    const bool finishPositioning = overlay.Editing();
     HMENU menu = CreatePopupMenu();
     AppendMenuW(menu, MF_STRING, TraySettings, L"Settings");
     AppendMenuW(menu, MF_STRING, TrayUpdates, L"Check for updates");
     AppendMenuW(menu, MF_STRING, TrayToggle, settings.enabled ? L"Hide overlay" : L"Show overlay");
-    AppendMenuW(menu, MF_STRING, TrayPosition, overlay.Editing() ? L"Finish positioning" : L"Move overlay");
+    AppendMenuW(menu, MF_STRING, TrayPosition, finishPositioning ? L"Finish positioning" : L"Move overlay");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, TrayExit, L"Exit Input Overlay");
     SetMenuDefaultItem(menu, TraySettings, FALSE);
@@ -478,7 +488,7 @@ void Application::TrayMenu() {
     if (choice == TraySettings) ShowSettings();
     if (choice == TrayUpdates) CheckForUpdates(true);
     if (choice == TrayToggle) Toggle();
-    if (choice == TrayPosition) EditPosition(!overlay.Editing());
+    if (choice == TrayPosition) EditPosition(!finishPositioning);
     if (choice == TrayExit) Quit();
 }
 

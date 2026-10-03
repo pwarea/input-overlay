@@ -1,3 +1,3 @@
-- Added keyboard, mouse, and controller views with transparent Pearl styling.
-- Added configurable inputs, application filters, positioning, and startup preferences.
-- Added optional startup update checks and manual installation with saved settings preserved.
+- Fixed the overlay appearing over unrelated applications when position mode was left active with an application filter enabled.
+- Position mode now ends when switching applications, minimizing settings, or leaving the current settings page. Appearance changes keep the selected application filter active.
+- Release titles now show a readable version number.

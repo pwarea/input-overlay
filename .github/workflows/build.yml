@@ -81,7 +81,8 @@ jobs:
         run: |
           set -euo pipefail
           tag="build-$BUILD_COMMIT"
-          title="Input Overlay ${BUILD_COMMIT:0:12}"
+          version=$(python3 -c 'import json; print(json.load(open("release/update.json"))["version"])')
+          title="Input Overlay v$version"
           if gh release view "$tag" --repo "$GH_REPO" >/dev/null 2>&1; then
             draft=$(gh api "repos/$GH_REPO/releases/tags/$tag" --jq '.draft')
             if [ "$draft" != true ]; then exit 0; fi

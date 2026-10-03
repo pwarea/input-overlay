@@ -28,6 +28,10 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Renderer test compilation failed.' }
         & './build/overlay_smoke.exe'
         if ($LASTEXITCODE -ne 0) { throw 'Renderer tests failed.' }
+        & $Zig c++ @common tests/application_visibility_tests.cpp src/config.cpp src/overlay.cpp src/injected_input.cpp src/controller.cpp src/updates.cpp src/update_install.cpp -luser32 -lgdi32 -lgdiplus -lcomctl32 -lshell32 -ladvapi32 -ldwmapi -lwtsapi32 -luxtheme -lwinhttp -lbcrypt -o build/application_visibility_tests.exe
+        if ($LASTEXITCODE -ne 0) { throw 'Application visibility test compilation failed.' }
+        & './build/application_visibility_tests.exe'
+        if ($LASTEXITCODE -ne 0) { throw 'Application visibility tests failed.' }
         & $Zig c++ @common tests/injected_input_tests.cpp src/injected_input.cpp -luser32 -o build/injected_input_tests.exe
         if ($LASTEXITCODE -ne 0) { throw 'Input worker test compilation failed.' }
         & './build/injected_input_tests.exe'

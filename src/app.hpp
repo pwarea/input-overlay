@@ -18,7 +18,7 @@
 #include "updates.hpp"
 
 #ifndef INPUT_OVERLAY_VERSION
-#define INPUT_OVERLAY_VERSION "0.1.0"
+#define INPUT_OVERLAY_VERSION "0.1.1"
 #endif
 #define INPUT_OVERLAY_WIDEN_IMPL(value) L##value
 #define INPUT_OVERLAY_WIDEN(value) INPUT_OVERLAY_WIDEN_IMPL(value)
