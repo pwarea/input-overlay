@@ -169,6 +169,8 @@ void NormalizeSettings(Settings& settings) {
     settings.opacity = std::clamp(settings.opacity, 15, 100);
     settings.gradientFillOpacity = std::clamp(settings.gradientFillOpacity, 4, 45);
     settings.accent &= 0x00ffffff;
+    if (settings.controllerAccent != CLR_INVALID && settings.controllerAccent > 0x00ffffff)
+        settings.controllerAccent = CLR_INVALID;
     settings.backgroundStart &= 0x00ffffff;
     settings.backgroundEnd &= 0x00ffffff;
     if (static_cast<int>(settings.colorTheme) < 0 || static_cast<int>(settings.colorTheme) >= ColorThemeCount)
@@ -228,6 +230,7 @@ bool LoadSettings(const std::wstring& file, Settings& settings) {
     settings.style = OverlayStyle::Outline;
     std::wistringstream stream(text);
     std::wstring line, section;
+    bool hasControllerAccent = false;
     while (std::getline(stream, line)) {
         if (!line.empty() && line.back() == L'\r') line.pop_back();
         if (line.size() > 65536) continue;
@@ -266,6 +269,12 @@ bool LoadSettings(const std::wstring& file, Settings& settings) {
             if (key == L"controllerStyle") {
                 settings.controllerStyle = numeric && number >= 0 && number < ControllerStyleCount
                     ? static_cast<ControllerStyle>(number) : ControllerStyle::Frost;
+                continue;
+            }
+            if (key == L"controllerAccent") {
+                hasControllerAccent = true;
+                settings.controllerAccent = numeric && number >= 0 && number <= 0xffffff
+                    ? static_cast<COLORREF>(number) : CLR_INVALID;
                 continue;
             }
             if (key == L"controllerIndex") {
@@ -313,6 +322,8 @@ bool LoadSettings(const std::wstring& file, Settings& settings) {
                 settings.applications.push_back(std::move(path));
         }
     }
+    if (!hasControllerAccent && settings.accent != DefaultSettings().accent)
+        settings.controllerAccent = settings.accent;
     NormalizeSettings(settings);
     return true;
 }
@@ -330,6 +341,7 @@ bool SaveSettings(const std::wstring& file, const Settings& settings) {
         << L"\r\ndevice=" << static_cast<int>(clean.device)
         << L"\r\ncontrollerLayout=" << static_cast<int>(clean.controllerLayout)
         << L"\r\ncontrollerStyle=" << static_cast<int>(clean.controllerStyle)
+        << L"\r\ncontrollerAccent=" << (clean.controllerAccent == CLR_INVALID ? -1 : static_cast<int>(clean.controllerAccent))
         << L"\r\ncontrollerIndex=" << clean.controllerIndex << L"\r\ncontrollerDeadzone=" << clean.controllerDeadzone
         << L"\r\nstartMinimized=" << clean.startMinimized
         << L"\r\nautoCheckUpdates=" << clean.autoCheckUpdates

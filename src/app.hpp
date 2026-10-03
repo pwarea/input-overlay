@@ -18,7 +18,7 @@
 #include "updates.hpp"
 
 #ifndef INPUT_OVERLAY_VERSION
-#define INPUT_OVERLAY_VERSION "0.3.0"
+#define INPUT_OVERLAY_VERSION "0.3.1"
 #endif
 #define INPUT_OVERLAY_WIDEN_IMPL(value) L##value
 #define INPUT_OVERLAY_WIDEN(value) INPUT_OVERLAY_WIDEN_IMPL(value)
@@ -65,6 +65,7 @@ struct Settings {
     OverlayDevice device = OverlayDevice::KeyboardMouse;
     ControllerLayout controllerLayout = ControllerLayout::Xbox;
     ControllerStyle controllerStyle = ControllerStyle::Frost;
+    COLORREF controllerAccent = CLR_INVALID;
     int controllerIndex = -1, controllerDeadzone = 15;
     bool enabled = true, onlySelectedApps = false, showMouse = true;
     bool startMinimized = false;

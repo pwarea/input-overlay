@@ -124,10 +124,10 @@ void Run() {
                 "Gradient preferences must affect Prism only");
             Check((held != Draw(settings, heldState)) == (settings.controllerStyle == ControllerStyle::Prism),
                 "Gradient preferences must affect Prism pressed colors only");
-            settings.accent = RGB(241, 73, 102);
+            settings.controllerAccent = RGB(241, 73, 102);
             Check(custom == Draw(settings, state), "Pressed accent must not change idle controller surfaces");
             const auto pink = Draw(settings, heldState);
-            settings.accent = RGB(33, 229, 157);
+            settings.controllerAccent = RGB(33, 229, 157);
             Check((pink != Draw(settings, heldState)) == (settings.controllerStyle != ControllerStyle::Prism),
                 "Air and Frost must honor the pressed accent while Prism retains its gradient");
             Check(custom == Draw(settings, state), "Unchanged controller state must render deterministically");

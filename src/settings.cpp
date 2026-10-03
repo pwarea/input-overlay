@@ -60,6 +60,12 @@ UiState ui;
 bool GradientAppearance(const Settings& settings, bool controller) {
     return controller ? settings.controllerStyle == ControllerStyle::Prism : settings.style == OverlayStyle::Gradient;
 }
+ThemeColors AppearancePalette(const Settings& settings, bool controller) {
+    return controller ? ControllerThemePalette(settings) : ThemePalette(settings);
+}
+COLORREF AppearanceAccentColor(const Settings& settings, bool controller) {
+    return controller ? ControllerAccentColor(settings) : settings.accent;
+}
 int Px(int value) { return MulDiv(value, static_cast<int>(ui.dpi), 96); }
 HFONT MakeFont(int size, int weight) {
     return CreateFontW(-Px(size), 0, 0, 0, weight, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
@@ -150,8 +156,8 @@ void DrawColorConnection(HDC dc, const RECT& bounds, COLORREF start, COLORREF en
         SelectObject(dc, oldBrush); SelectObject(dc, oldPen); DeleteObject(brush); DeleteObject(pen);
     }
 }
-void DrawThemePreview(HDC dc, const RECT& card, const Settings& settings) {
-    const auto palette = ThemePalette(settings);
+void DrawThemePreview(HDC dc, const RECT& card, const Settings& settings, bool controller) {
+    const auto palette = AppearancePalette(settings, controller);
     RECT connection{card.left + Px(11), card.top + Px(26), card.right - Px(11), card.bottom - Px(5)};
     if (settings.colorTheme == ColorTheme::Custom) {
         connection.left = card.right - Px(96); connection.top = card.top + Px(4); connection.bottom = card.bottom - Px(4);
@@ -460,7 +466,7 @@ void SettingsWindow::UpdateControls() {
         SendDlgItemMessageW(hwnd_, PreviewLayout, CB_SETCURSEL,
             ui.appearanceController ? static_cast<int>(ui.previewControllerLayout) : ui.previewIso ? 1 : 0, 0);
         if (GradientAppearance(settings, ui.appearanceController)) {
-            const auto palette = ThemePalette(settings);
+            const auto palette = AppearancePalette(settings, ui.appearanceController);
             if (GetFocus() != GetDlgItem(hwnd_, StartHex)) SetText(hwnd_, StartHex, ColorHex(palette.start));
             if (GetFocus() != GetDlgItem(hwnd_, EndHex)) SetText(hwnd_, EndHex, ColorHex(palette.end));
             SendDlgItemMessageW(hwnd_, GradientFillControl, TBM_SETPOS, TRUE, settings.gradientFillOpacity);
@@ -468,7 +474,7 @@ void SettingsWindow::UpdateControls() {
             for (int id = ThemeFirst; id <= ThemeLast; ++id) InvalidateControl(hwnd_, id);
             for (int id : {BackgroundStart, BackgroundEnd, GradientStrip}) InvalidateControl(hwnd_, id);
         } else {
-            SetText(hwnd_, PressedColor, ColorHex(settings.accent));
+            SetText(hwnd_, PressedColor, ColorHex(AppearanceAccentColor(settings, ui.appearanceController)));
             for (int id = AccentFirst; id <= AccentLast; ++id) InvalidateControl(hwnd_, id);
             InvalidateControl(hwnd_, PressedColor);
         }
@@ -598,7 +604,9 @@ void SettingsWindow::Command(int id, int code) {
         ui.status.clear(); Build(); app_->Changed(); SetFocus(GetDlgItem(hwnd_, id)); return;
     }
     if (id >= AccentFirst && id <= AccentLast) {
-        settings.accent = Accents[static_cast<size_t>(id - AccentFirst)]; app_->Changed(); UpdateControls(); return;
+        if (ui.appearanceController) settings.controllerAccent = Accents[static_cast<size_t>(id - AccentFirst)];
+        else settings.accent = Accents[static_cast<size_t>(id - AccentFirst)];
+        app_->Changed(); UpdateControls(); return;
     }
     switch (id) {
     case OpenLayout: SelectPage(6); return;
@@ -637,7 +645,7 @@ void SettingsWindow::Command(int id, int code) {
         const bool valid = ParseColorHex(Text(hwnd_, id), chosen);
         if (code == EN_KILLFOCUS) {
             ui.updating = true;
-            const auto palette = ThemePalette(settings);
+            const auto palette = AppearancePalette(settings, ui.appearanceController);
             SetText(hwnd_, id, ColorHex(id == StartHex ? palette.start : palette.end));
             ui.updating = false;
             ui.status.clear(); SetText(hwnd_, Status, ui.status); return;
@@ -646,7 +654,7 @@ void SettingsWindow::Command(int id, int code) {
             ui.status = L"Enter six HEX digits, for example #FFB25B. The current color stays unchanged.";
             SetText(hwnd_, Status, ui.status); InvalidateControl(hwnd_, id); return;
         }
-        const auto palette = ThemePalette(settings);
+        const auto palette = AppearancePalette(settings, ui.appearanceController);
         if (chosen != (id == StartHex ? palette.start : palette.end)) {
             settings.backgroundStart = id == StartHex ? chosen : palette.start;
             settings.backgroundEnd = id == EndHex ? chosen : palette.end;
@@ -657,7 +665,7 @@ void SettingsWindow::Command(int id, int code) {
     }
     case SwapGradient: {
         if (code != BN_CLICKED || !GradientAppearance(settings, ui.appearanceController)) return;
-        const auto palette = ThemePalette(settings);
+        const auto palette = AppearancePalette(settings, ui.appearanceController);
         settings.backgroundStart = palette.end; settings.backgroundEnd = palette.start;
         settings.colorTheme = ColorTheme::Custom;
         ui.status.clear(); app_->Changed(); break;
@@ -671,11 +679,14 @@ void SettingsWindow::Command(int id, int code) {
     }
     case BackgroundStart: case BackgroundEnd: case PressedColor: {
         if (code != BN_CLICKED) return;
-        const auto palette = ThemePalette(settings);
-        COLORREF chosen = id == PressedColor ? settings.accent : id == BackgroundStart ? palette.start : palette.end;
+        const auto palette = AppearancePalette(settings, ui.appearanceController);
+        COLORREF chosen = id == PressedColor ? AppearanceAccentColor(settings, ui.appearanceController) : id == BackgroundStart ? palette.start : palette.end;
         const wchar_t* title = id == PressedColor ? L"Pressed color" : id == BackgroundStart ? L"Gradient start" : L"Gradient end";
         if (!ChooseOverlayColor(hwnd_, chosen, title)) return;
-        if (id == PressedColor) settings.accent = chosen;
+        if (id == PressedColor) {
+            if (ui.appearanceController) settings.controllerAccent = chosen;
+            else settings.accent = chosen;
+        }
         else {
             settings.backgroundStart = id == BackgroundStart ? chosen : palette.start;
             settings.backgroundEnd = id == BackgroundEnd ? chosen : palette.end;
@@ -924,7 +935,7 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wParam,
         }
         if (item->CtlType == ODT_STATIC && item->CtlID == GradientStrip) {
             Fill(item->hDC, item->rcItem, Background);
-            const auto palette = ThemePalette(self->app_->settings);
+            const auto palette = AppearancePalette(self->app_->settings, ui.appearanceController);
             DrawColorConnection(item->hDC, item->rcItem, palette.start, palette.end, false);
             return TRUE;
         }
@@ -941,7 +952,8 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wParam,
             (themeCard && static_cast<int>(item->CtlID - ThemeFirst) == static_cast<int>(activeTheme)) ||
             (item->CtlID == PreviewIdle && !ui.previewPressed) || (item->CtlID == PreviewPressed && ui.previewPressed);
         const bool controllerAppearance = self->page_ == 4 || (self->page_ == 0 && ui.appearanceController);
-        const COLORREF accent = GradientAppearance(self->app_->settings, controllerAppearance) ? ThemePalette(self->app_->settings).middle : self->app_->settings.accent;
+        const COLORREF accent = GradientAppearance(self->app_->settings, controllerAppearance) ?
+            AppearancePalette(self->app_->settings, controllerAppearance).middle : AppearanceAccentColor(self->app_->settings, controllerAppearance);
         const bool primary = GetPropW(item->hwndItem, L"InputOverlay.Primary") != nullptr;
         const bool swatch = item->CtlID >= AccentFirst && item->CtlID <= AccentLast;
         COLORREF fill = selected ? RGB(30, 49, 64) : (nav ? Sidebar : Surface);
@@ -961,7 +973,7 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wParam,
         if (themeCard) {
             auto preview = self->app_->settings;
             preview.colorTheme = static_cast<ColorTheme>(item->CtlID - ThemeFirst);
-            DrawThemePreview(item->hDC, item->rcItem, preview);
+            DrawThemePreview(item->hDC, item->rcItem, preview, controllerAppearance);
             labelRect.left += Px(11); align = DT_LEFT;
             if (preview.colorTheme == ColorTheme::Custom) labelRect.right -= Px(108);
             else { labelRect.top += Px(3); labelRect.bottom = labelRect.top + Px(22); labelRect.right -= Px(20); }
@@ -971,8 +983,8 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wParam,
             }
         }
         if (colorButton) {
-            const auto palette = ThemePalette(self->app_->settings);
-            const COLORREF color = item->CtlID == PressedColor ? self->app_->settings.accent :
+            const auto palette = AppearancePalette(self->app_->settings, controllerAppearance);
+            const COLORREF color = item->CtlID == PressedColor ? AppearanceAccentColor(self->app_->settings, controllerAppearance) :
                 item->CtlID == BackgroundStart ? palette.start : palette.end;
             RECT swatchRect = item->rcItem;
             if (item->CtlID == PressedColor) swatchRect = {item->rcItem.left + Px(14), item->rcItem.top + Px(12), item->rcItem.left + Px(32), item->rcItem.top + Px(30)};
@@ -989,7 +1001,7 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wParam,
             HBRUSH color = CreateSolidBrush(swatchAccent); oldBrush = SelectObject(item->hDC, color); oldPen = SelectObject(item->hDC, GetStockObject(NULL_PEN));
             Ellipse(item->hDC, circle.left, circle.top, circle.right, circle.bottom);
             SelectObject(item->hDC, oldBrush); SelectObject(item->hDC, oldPen); DeleteObject(color); labelRect.left += Px(24);
-            if (self->app_->settings.accent == swatchAccent) {
+            if (AppearanceAccentColor(self->app_->settings, controllerAppearance) == swatchAccent) {
                 RECT underline{item->rcItem.left + Px(13), item->rcItem.bottom - Px(5), item->rcItem.right - Px(13), item->rcItem.bottom - Px(3)}; Fill(item->hDC, underline, swatchAccent);
             }
         }

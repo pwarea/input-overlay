@@ -1,6 +1,6 @@
-- Redesigned the Xbox and DualSense controller silhouettes, grips, sticks, face buttons, and shoulder controls.
-- Added three independent controller designs: Air, Frost, and Prism, with transparent surfaces and responsive input highlights.
-- Added a glass touchpad surface to the DualSense appearance and distinct input layouts for each controller.
-- Added controller design previews with idle and pressed states and light or dark backgrounds.
-- Prism supports Sunset, Aurora, Ocean, Rose, custom HEX colors, and adjustable transparent fill.
-- Controller design choices are remembered without changing keyboard styles, bindings, application filters, position, or visibility.
+- Rebuilt the native Air, Frost, and Prism controller artwork.
+- Corrected Xbox and DualSense proportions, rounded grips, integrated shoulder controls, and touchpad size.
+- Added glass rims, recessed analog sticks, and brighter pressed-button highlights without a solid background panel.
+- Preserved controller proportions at every size instead of stretching the drawings to fit the keyboard canvas.
+- Controller pressed colors now have independent defaults and custom settings, without changing keyboard colors.
+- Existing bindings, application filters, position, visibility, and controller preferences remain saved.

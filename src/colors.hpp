@@ -23,6 +23,15 @@ inline ThemeColors ThemePalette(const Settings& settings) {
     }
     return {start, MixColor(start, end, 0.5f), end};
 }
+inline COLORREF ControllerAccentColor(const Settings& settings) {
+    if (settings.controllerAccent != CLR_INVALID) return settings.controllerAccent;
+    return settings.controllerStyle == ControllerStyle::Air ? RGB(162, 246, 218) : RGB(102, 209, 255);
+}
+inline ThemeColors ControllerThemePalette(const Settings& settings) {
+    if (settings.colorTheme != ColorTheme::Original && settings.colorTheme != ColorTheme::Sunset) return ThemePalette(settings);
+    const COLORREF start = RGB(255, 177, 86), end = RGB(208, 116, 245);
+    return {start, MixColor(start, end, 0.5f), end};
+}
 inline COLORREF ThemeColorAt(const Settings& settings, float position) {
     const auto palette = ThemePalette(settings);
     return MixColor(palette.start, palette.end, position);

@@ -581,6 +581,97 @@ void TestControllerStyles(const TemporaryDirectory& temp) {
     }
 }
 
+void TestControllerAccent(const TemporaryDirectory& temp) {
+    const auto file = temp.File(L"controller-accent.ini");
+    const COLORREF sky = RGB(125, 211, 252);
+    auto settings = input_overlay::DefaultSettings();
+    Check(settings.controllerAccent == CLR_INVALID && settings.accent == sky,
+        "New controller accents must use their automatic style color independently of the keyboard accent");
+    settings.accent = RGB(71, 122, 193);
+    settings.style = input_overlay::OverlayStyle::Pearl;
+    settings.device = input_overlay::OverlayDevice::Controller;
+    settings.enabled = false;
+    settings.onlySelectedApps = true;
+    settings.startMinimized = true;
+    settings.applications = {temp.File(L"Absent Game\\game.exe")};
+    settings.colorTheme = input_overlay::ColorTheme::Custom;
+    settings.backgroundStart = RGB(11, 64, 127);
+    settings.backgroundEnd = RGB(238, 142, 37);
+    settings.gradientFillOpacity = 21;
+    for (int style = 0; style < input_overlay::ControllerStyleCount; ++style) {
+        settings.controllerStyle = static_cast<input_overlay::ControllerStyle>(style);
+        for (const COLORREF accent : {COLORREF{CLR_INVALID}, sky, RGB(0, 0, 0), RGB(255, 255, 255),
+            RGB(162, 246, 218), RGB(102, 209, 255), RGB(219, 63, 129)}) {
+            settings.controllerAccent = accent;
+            Check(input_overlay::SaveSettings(file, settings), "Automatic and explicit controller accents must save");
+            input_overlay::Settings restored;
+            Check(input_overlay::LoadSettings(file, restored) && restored.controllerAccent == accent &&
+                restored.accent == settings.accent && restored.controllerStyle == settings.controllerStyle &&
+                restored.style == settings.style && restored.device == settings.device,
+                "Controller accents must round trip exactly without changing either device's selected style or keyboard accent");
+            const COLORREF expectedColor = accent != CLR_INVALID ? accent :
+                restored.controllerStyle == input_overlay::ControllerStyle::Air ? RGB(162, 246, 218) : RGB(102, 209, 255);
+            Check(input_overlay::ControllerAccentColor(restored) == expectedColor,
+                "Automatic controller colors must match each design while explicit colors, including sky, remain literal");
+            Check(!restored.enabled && restored.onlySelectedApps && restored.startMinimized &&
+                restored.applications == settings.applications && restored.colorTheme == settings.colorTheme &&
+                restored.backgroundStart == settings.backgroundStart && restored.backgroundEnd == settings.backgroundEnd &&
+                restored.gradientFillOpacity == settings.gradientFillOpacity,
+                "Controller accents must preserve overlay visibility, application restrictions and custom gradient colors");
+        }
+    }
+    for (const COLORREF invalid : {COLORREF{0x01000000}, COLORREF{0x80000000}, COLORREF{0xfffffffe}}) {
+        settings.controllerAccent = invalid;
+        input_overlay::NormalizeSettings(settings);
+        Check(settings.controllerAccent == CLR_INVALID && settings.accent == RGB(71, 122, 193),
+            "Reserved controller color bits must recover to automatic style color without altering keyboard accent");
+        settings.controllerAccent = invalid;
+        Check(input_overlay::SaveSettings(file, settings) && settings.controllerAccent == invalid,
+            "Saving invalid controller accents must normalize a copy");
+        input_overlay::Settings restored;
+        Check(input_overlay::LoadSettings(file, restored) && restored.controllerAccent == CLR_INVALID &&
+            restored.accent == settings.accent,
+            "Saved invalid controller accents must remain automatic instead of migrating the keyboard accent");
+    }
+    for (const char* invalid : {"-2", "-2147483648", "16777216", "2147483647", "2147483648", "4294967295", "invalid", "1.5", ""}) {
+        WriteBytes(file, std::string("[General]\naccent=197121\ncontrollerAccent=255\ncontrollerAccent=") + invalid +
+            "\ncontrollerStyle=2\ncolorTheme=3\nbackgroundStart=123456\nbackgroundEnd=654321\nenabled=0\nonlySelectedApps=1\n");
+        Check(input_overlay::LoadSettings(file, settings) && settings.controllerAccent == CLR_INVALID &&
+            settings.accent == RGB(1, 2, 3) && settings.controllerStyle == input_overlay::ControllerStyle::Prism &&
+            settings.colorTheme == input_overlay::ColorTheme::Ocean && settings.backgroundStart == 123456 &&
+            settings.backgroundEnd == 654321 && !settings.enabled && settings.onlySelectedApps,
+            "Malformed controller accents must suppress migration, recover automatic color and preserve unrelated preferences");
+    }
+    for (const COLORREF legacyAccent : {sky, RGB(0, 0, 0), RGB(255, 255, 255), RGB(219, 63, 129)}) {
+        WriteBytes(file, "[General]\ncontrollerStyle=0\naccent=" + std::to_string(legacyAccent) +
+            "\nstyle=4\nenabled=0\nonlySelectedApps=1\n");
+        const COLORREF migrated = legacyAccent == sky ? CLR_INVALID : legacyAccent;
+        Check(input_overlay::LoadSettings(file, settings) && settings.controllerAccent == migrated && settings.accent == legacyAccent &&
+            settings.controllerStyle == input_overlay::ControllerStyle::Air && settings.style == input_overlay::OverlayStyle::Pearl &&
+            !settings.enabled && settings.onlySelectedApps,
+            "Legacy settings must migrate custom accents while allowing the old default sky to use the new design's default");
+        Check(input_overlay::SaveSettings(file, settings) && input_overlay::LoadSettings(file, settings) &&
+            settings.controllerAccent == migrated, "Migrated controller colors must remain stable after saving and reopening");
+    }
+    for (const bool keyFirst : {false, true}) {
+        const std::string explicitSky = "controllerAccent=" + std::to_string(sky) + "\n";
+        const std::string keyboardAccent = "accent=197121\n";
+        WriteBytes(file, "[General]\n" + (keyFirst ? explicitSky + keyboardAccent : keyboardAccent + explicitSky));
+        Check(input_overlay::LoadSettings(file, settings) && settings.controllerAccent == sky && settings.accent == RGB(1, 2, 3),
+            "An explicitly selected sky controller color must remain literal regardless of stored key order");
+    }
+    WriteBytes(file, "[General]\ncontrollerAccent=-1\naccent=197121\n");
+    Check(input_overlay::LoadSettings(file, settings) && settings.controllerAccent == CLR_INVALID && settings.accent == RGB(1, 2, 3),
+        "The explicit automatic sentinel must suppress legacy custom-accent migration");
+    WriteBytes(file, "[General]\nenabled=0\nonlySelectedApps=1\n");
+    Check(input_overlay::LoadSettings(file, settings) && settings.controllerAccent == CLR_INVALID && settings.accent == sky &&
+        !settings.enabled && settings.onlySelectedApps,
+        "Legacy settings without either accent must retain automatic controller color and existing visibility preferences");
+    settings.controllerAccent = RGB(219, 63, 129);
+    Check(!input_overlay::LoadSettings(temp.File(L"missing-controller-accent.ini"), settings) && settings.controllerAccent == CLR_INVALID,
+        "A new installation must use automatic controller colors");
+}
+
 void TestUpdatePreferences(const TemporaryDirectory& temp) {
     const auto file = temp.File(L"updates.ini");
     auto settings = input_overlay::DefaultSettings();
@@ -665,6 +756,7 @@ int main() {
         TestStartupState(temp);
         TestControllerSettings(temp);
         TestControllerStyles(temp);
+        TestControllerAccent(temp);
         TestUpdatePreferences(temp);
         TestMalformed(temp);
         Check(!input_overlay::ExecutablePath().empty(), "Executable path must resolve");
