@@ -1,4 +1,4 @@
-- Added Gradient, a separate transparent style with always-visible color, thin gradient edges, and clear pressed inputs.
+- Added a dedicated Gradient style with transparent fills, always-visible color, thin gradient edges, and clear pressed inputs.
 - Added Sunset, Aurora, Ocean, and Rose presets with two-color gradient swatches, plus saved custom colors.
 - Added a full-spectrum color picker, editable HEX colors, gradient color swapping, fill opacity, and Reset Gradient.
 - Added a live settings preview with idle and pressed inputs, light and dark backgrounds, and ANSI or ISO layouts.

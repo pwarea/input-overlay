@@ -932,13 +932,13 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wParam,
             if (item->CtlID == PressedColor) labelRect.left += Px(31);
         }
         if (swatch) {
-            const COLORREF accent = Accents[item->CtlID - AccentFirst];
+            const COLORREF swatchAccent = Accents[item->CtlID - AccentFirst];
             RECT circle{item->rcItem.left + Px(12), item->rcItem.top + Px(12), item->rcItem.left + Px(25), item->rcItem.top + Px(25)};
-            HBRUSH color = CreateSolidBrush(accent); oldBrush = SelectObject(item->hDC, color); oldPen = SelectObject(item->hDC, GetStockObject(NULL_PEN));
+            HBRUSH color = CreateSolidBrush(swatchAccent); oldBrush = SelectObject(item->hDC, color); oldPen = SelectObject(item->hDC, GetStockObject(NULL_PEN));
             Ellipse(item->hDC, circle.left, circle.top, circle.right, circle.bottom);
             SelectObject(item->hDC, oldBrush); SelectObject(item->hDC, oldPen); DeleteObject(color); labelRect.left += Px(24);
-            if (self->app_->settings.accent == accent) {
-                RECT underline{item->rcItem.left + Px(13), item->rcItem.bottom - Px(5), item->rcItem.right - Px(13), item->rcItem.bottom - Px(3)}; Fill(item->hDC, underline, accent);
+            if (self->app_->settings.accent == swatchAccent) {
+                RECT underline{item->rcItem.left + Px(13), item->rcItem.bottom - Px(5), item->rcItem.right - Px(13), item->rcItem.bottom - Px(3)}; Fill(item->hDC, underline, swatchAccent);
             }
         }
         wchar_t label[128]{}; GetWindowTextW(item->hwndItem, label, 128);
