@@ -16,7 +16,9 @@ Run `Input Overlay.exe`. Settings are saved beside it in `Input Overlay.ini`; ke
 
 - **Ctrl + Alt + F10** instantly hides or shows the overlay. Change the shortcut in **General**.
 - Right-click the system tray icon for settings, visibility, positioning, or **Exit Input Overlay**. Closing settings keeps the overlay running.
-- **Overlay** offers Pearl, Outline, Neon, Glass, and Circuit styles, ANSI/ISO English layout, mouse visibility, opacity, color, and scale from 10% to 200%. Pearl uses transparent glass surfaces, reflective edges, and a slightly larger mouse. Styles keep the same compact canvas and use no animation or background panel. **Move overlay** temporarily enables dragging; finish positioning to restore click-through. Switching applications, minimizing settings, or changing settings pages also ends positioning and restores the application filter. Reset restores 100% scale at the bottom-left.
+- **Overlay** offers Pearl, Outline, Neon, Glass, Circuit, and Gradient styles, with a live preview for idle or pressed inputs against light or dark backgrounds. Pearl uses transparent glass surfaces, reflective edges, and a slightly larger mouse. Styles keep the same compact canvas and use no animation or background panel.
+- **Gradient** adds always-visible Sunset, Aurora, Ocean, and Rose colors inside transparent shapes, with thin gradient edges and brighter pressed inputs. Preset swatches show both endpoint colors and their transition. Choose custom colors with the full-spectrum picker or HEX fields, swap the endpoints, adjust fill opacity from 4% to 45%, or use **Reset Gradient**. Custom endpoints are remembered while trying other presets. The other five styles keep their existing appearance and independent pressed accent.
+- **Layout**, also accessible through **Size & position**, controls ANSI/ISO English layout, mouse visibility, overall opacity, and scale from 10% to 200%. **Move overlay** temporarily enables dragging; finish positioning to restore click-through. Switching applications, minimizing settings, or changing settings pages also ends positioning and restores the application filter. Reset restores 100% scale at the bottom-left.
 - **Bindings** separates a visual key's label from its input. Capture a keyboard key, mouse button, or wheel direction. Assigning Q to a mouse side button removes Q from its previous visual; it does not alter keyboard input sent to games. **Unbind** removes the selected element's input. **Reset to default** restores that element's original input, label, and visibility.
 - **Applications** lets you choose running windows. Rules match the executable's complete path, survive restarts and title changes, and activate only while that application's window is foreground. An empty restricted list shows nothing.
 - **Controller** switches to a gamepad view with Xbox or PlayStation button appearance, automatic selection or a specific XInput controller, and a 0%–40% stick deadzone. Sticks, stick clicks, triggers, shoulders, face buttons, and D-pad directions respond independently. Controller mode shares the overlay style, scale, position, shortcut, and application rules. Keyboard and mouse bindings are preserved when switching views.
@@ -73,13 +75,13 @@ For interactive checks, configure CMake with `-DINPUT_OVERLAY_BUILD_MANUAL_TESTS
 Create a portable package from a release build:
 
 ```powershell
-./scripts/package.ps1 -ExecutablePath 'dist/Input Overlay.exe' -Version 0.1.1
+./scripts/package.ps1 -ExecutablePath 'dist/Input Overlay.exe' -Version 0.2.0
 ```
 
-Upload `dist/releases/v0.1.1/Input-Overlay-windows-x64.zip` and its `.sha256` file to the GitHub release. Keep the ZIP asset name the same in each release so the download badge counts it across versions. The ZIP includes only the executable, README, license, and third-party notices. The packager never includes local settings or debug files.
+Upload `dist/releases/v0.2.0/Input-Overlay-windows-x64.zip` and its `.sha256` file to the GitHub release. Keep the ZIP asset name the same in each release so the download badge counts it across versions. The ZIP includes only the executable, README, license, and third-party notices. The packager never includes local settings or debug files.
 
 Every push to `main` runs the Windows build and tests, then publishes a release tagged `build-<full commit SHA>`. The release includes the portable ZIP and the four individually hashed files used by the updater. Files are uploaded to a draft before publication, so clients do not install partial releases. Only a successful build of the current `main` commit is marked as the latest release. Pull requests build and test without publishing.
 
 To write the update notes displayed in the application, replace the bullets in [UPDATE_NOTES.md](UPDATE_NOTES.md) and include that change in the same commit as your update. Use up to 32 single-line bullet points of at most 1000 characters. When that file is unchanged in the commit, its nonempty commit-message lines become the notes instead; attribution trailers are omitted. Notes are displayed as plain text.
 
-Pushing a `v0.1.1` tag matching the CMake version separately prepares a draft versioned release for manual review. In-app updates continue to follow `main` and its commit-specific releases.
+Pushing a `v0.2.0` tag matching the CMake version separately prepares a draft versioned release for manual review. In-app updates continue to follow `main` and its commit-specific releases.

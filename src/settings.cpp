@@ -1,5 +1,7 @@
 #include "app.hpp"
 #include "updates.hpp"
+#include "colors.hpp"
+#include "color_picker.hpp"
 #include <commctrl.h>
 #include <uxtheme.h>
 #include <dwmapi.h>
@@ -15,26 +17,31 @@ constexpr int ClientWidth = 824, ClientHeight = 670;
 constexpr DWORD WindowStyle = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
 constexpr DWORD WindowExStyle = WS_EX_APPWINDOW | WS_EX_CONTROLPARENT;
 enum ControlId {
-    NavOverlay = 100, NavBindings, NavApplications, NavGeneral, NavController, NavUpdates,
+    NavOverlay = 100, NavBindings, NavApplications, NavGeneral, NavController, NavUpdates, NavLayout,
     Enabled = 200, MouseVisible, Scale, ScaleValue, Opacity, OpacityValue,
-    MoveOverlay, Layout, ResetPosition, AccentFirst = 220, AccentLast = 224, StyleFirst = 230, StyleLast = StyleFirst + OverlayStyleCount - 1,
+    MoveOverlay, Layout, ResetPosition, OpenLayout, AccentFirst = 220, AccentLast = 224, StyleFirst = 230, StyleLast = StyleFirst + OverlayStyleCount - 1,
+    OverlayPreview = 240, PreviewIdle, PreviewPressed, PreviewBackground, PreviewLayout,
     SlotList = 300, SlotTitle, SlotVisible, LabelEdit, SaveLabel, InputValue, RecordInput, UnbindInput, ResetBinding,
     RestrictApps = 400, WindowList, RefreshWindows, AddWindow, AllowedList, RemoveApp, WindowPath,
     HotkeyValue = 500, ModCtrl, ModAlt, ModShift, ModWin, RecordHotkey, Startup, StartMinimized,
     ControllerMode = 600, ControllerLayoutChoice, ControllerIndex, ControllerDeadzone, ControllerDeadzoneValue,
     AutoCheckUpdates = 700, CheckUpdates, InstallUpdate, UpdateVersion, UpdateMessage, UpdateNotesTitle, UpdateNotes,
+    ThemeFirst = 800, ThemeLast = ThemeFirst + ColorThemeCount - 1, BackgroundStart = 820, BackgroundEnd, PressedColor,
+    StartHex, EndHex, SwapGradient, GradientFillControl, GradientFillValue, ResetGradient, GradientStrip,
     Status = 900, ExitApp = 950
 };
 const std::array<COLORREF, 5> Accents{{RGB(125, 211, 252), RGB(167, 139, 250), RGB(110, 231, 183), RGB(251, 191, 36), RGB(251, 113, 133)}};
-const wchar_t* StyleNames[] = {L"Outline", L"Neon", L"Glass", L"Circuit", L"Pearl"};
-const wchar_t* PageTitles[] = {L"Overlay", L"Bindings", L"Applications", L"General", L"Controller", L"Updates"};
+const wchar_t* StyleNames[] = {L"Outline", L"Neon", L"Glass", L"Circuit", L"Pearl", L"Gradient"};
+const wchar_t* ThemeNames[] = {L"Original", L"Sunset", L"Aurora", L"Ocean", L"Rose", L"Custom"};
+const wchar_t* PageTitles[] = {L"Overlay", L"Bindings", L"Applications", L"General", L"Controller", L"Updates", L"Layout"};
 const wchar_t* PageSubtitles[] = {
     L"A clear view of every input, exactly where you want it.",
     L"Choose which input lights up each element.",
     L"Show the overlay only when your chosen application is active.",
     L"Your shortcut, startup preferences, and compatibility.",
     L"A controller view with live buttons, triggers, and sticks.",
-    L"Keep Input Overlay current and see what changed."
+    L"Keep Input Overlay current and see what changed.",
+    L"Set the overlay size, transparency, and position."
 };
 struct UiState {
     UINT dpi = 96;
@@ -42,6 +49,7 @@ struct UiState {
     HBRUSH background = nullptr, surface = nullptr;
     int selectedSlot = 0;
     bool updating = false;
+    bool previewPressed = false, previewLight = false, previewIso = false;
     std::wstring status;
 };
 UiState ui;
@@ -117,48 +125,34 @@ COLORREF Tint(COLORREF base, COLORREF accent, int percent) {
         (GetGValue(base) * (100 - percent) + GetGValue(accent) * percent) / 100,
         (GetBValue(base) * (100 - percent) + GetBValue(accent) * percent) / 100);
 }
-void DrawStylePreview(HDC dc, const RECT& card, OverlayStyle style, COLORREF accent, COLORREF background) {
-    const LONG left = card.left + (card.right - card.left - Px(30)) / 2;
-    RECT key{left, card.top + Px(8), left + Px(30), card.top + Px(38)};
-    auto keycap = [&](RECT bounds, COLORREF edge, COLORREF fill, int thickness) {
-        HPEN pen = CreatePen(PS_SOLID, std::max(1, Px(thickness)), edge);
-        HBRUSH brush = CreateSolidBrush(fill);
-        HGDIOBJ oldPen = SelectObject(dc, pen), oldBrush = SelectObject(dc, brush);
-        RoundRect(dc, bounds.left, bounds.top, bounds.right, bounds.bottom, Px(6), Px(6));
-        SelectObject(dc, oldPen); SelectObject(dc, oldBrush); DeleteObject(pen); DeleteObject(brush);
-    };
-    COLORREF letter = Foreground;
-    if (style == OverlayStyle::Outline) {
-        keycap(key, Foreground, background, 1);
-    } else if (style == OverlayStyle::Neon) {
-        RECT glow = key; InflateRect(&glow, Px(2), Px(2));
-        keycap(glow, Tint(background, accent, 26), background, 3);
-        keycap(key, accent, Tint(background, accent, 9), 1);
-        letter = accent;
-    } else if (style == OverlayStyle::Glass) {
-        keycap(key, Tint(Foreground, accent, 25), Tint(background, accent, 32), 1);
-        RECT shine{key.left + Px(5), key.top + Px(3), key.right - Px(5), key.top + Px(5)};
-        Fill(dc, shine, Tint(Foreground, accent, 15));
-    } else if (style == OverlayStyle::Circuit) {
-        HPEN pen = CreatePen(PS_SOLID, std::max(1, Px(1)), accent);
-        HBRUSH brush = CreateSolidBrush(Tint(background, accent, 8));
-        HGDIOBJ oldPen = SelectObject(dc, pen), oldBrush = SelectObject(dc, brush);
-        const int cut = Px(5);
-        POINT outline[] = {{key.left + cut, key.top}, {key.right, key.top}, {key.right, key.bottom - cut},
-            {key.right - cut, key.bottom}, {key.left, key.bottom}, {key.left, key.top + cut}};
-        Polygon(dc, outline, 6);
-        MoveToEx(dc, key.left - Px(4), key.top + Px(9), nullptr); LineTo(dc, key.left, key.top + Px(9));
-        MoveToEx(dc, key.right, key.bottom - Px(9), nullptr); LineTo(dc, key.right + Px(4), key.bottom - Px(9));
-        SelectObject(dc, oldPen); SelectObject(dc, oldBrush); DeleteObject(pen); DeleteObject(brush);
-        letter = accent;
-    } else if (style == OverlayStyle::Pearl) {
-        keycap(key, Tint(background, Foreground, 70), Tint(background, Foreground, 5), 1);
-        RECT glint{key.left + Px(6), key.top + Px(2), key.right - Px(6), key.top + Px(3)};
-        Fill(dc, glint, Tint(Foreground, accent, 8));
-        RECT reflection{key.left + Px(6), key.bottom - Px(4), key.right - Px(6), key.bottom - Px(3)};
-        Fill(dc, reflection, Tint(background, Foreground, 19));
+void DrawColorConnection(HDC dc, const RECT& bounds, COLORREF start, COLORREF end, bool endpoints) {
+    const int radius = endpoints ? Px(7) : 0;
+    const int middle = (bounds.top + bounds.bottom) / 2;
+    const LONG left = bounds.left + radius, right = bounds.right - radius;
+    for (LONG x = left; x < right; ++x) {
+        const float position = static_cast<float>(x - left) / std::max(1L, right - left - 1);
+        Fill(dc, {x, middle - Px(2), x + 1, middle + Px(2)}, MixColor(start, end, position));
     }
-    DrawTextAt(dc, L"W", key, ui.smallFont, letter, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    if (!endpoints) return;
+    for (int i = 0; i < 2; ++i) {
+        HBRUSH brush = CreateSolidBrush(i ? end : start);
+        HPEN pen = CreatePen(PS_SOLID, 1, Tint(i ? end : start, Foreground, 25));
+        HGDIOBJ oldBrush = SelectObject(dc, brush), oldPen = SelectObject(dc, pen);
+        const int center = i ? right : left;
+        Ellipse(dc, center - radius, middle - radius, center + radius + 1, middle + radius + 1);
+        SelectObject(dc, oldBrush); SelectObject(dc, oldPen); DeleteObject(brush); DeleteObject(pen);
+    }
+}
+void DrawThemePreview(HDC dc, const RECT& card, const Settings& settings) {
+    const auto palette = ThemePalette(settings);
+    RECT connection{card.left + Px(11), card.top + Px(26), card.right - Px(11), card.bottom - Px(5)};
+    if (settings.colorTheme == ColorTheme::Custom) {
+        connection.left = card.right - Px(96); connection.top = card.top + Px(4); connection.bottom = card.bottom - Px(4);
+    }
+    DrawColorConnection(dc, connection, palette.start, palette.end, true);
+}
+void InvalidateControl(HWND window, int id) {
+    if (HWND control = GetDlgItem(window, id)) InvalidateRect(control, nullptr, FALSE);
 }
 std::wstring SlotName(size_t slot) {
     if (slot < KeyboardCount) return DefaultSettings().slots[slot].label + L" key";
@@ -215,6 +209,7 @@ std::wstring UpdateNotesText(const UpdateResult& result) {
 bool SettingsWindow::Show(Application& app) {
     app_ = &app;
     if (!hwnd_) {
+        ui.previewPressed = false; ui.previewLight = false; ui.previewIso = app.settings.isoLayout;
         WNDCLASSEXW wc{}; wc.cbSize = sizeof(wc);
         wc.lpfnWndProc = WndProc; wc.hInstance = GetModuleHandleW(nullptr);
         wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
@@ -274,33 +269,54 @@ void SettingsWindow::Build() {
             x, y, width, height, id, nullptr, WS_EX_CLIENTEDGE);
         SetWindowTheme(control, L"", L""); return control;
     };
-    for (int i = 0; i < 6; ++i) button(PageTitles[i], 16, 126 + i * 49, 152, 40, NavOverlay + i);
+    constexpr int order[] = {0, 6, 1, 2, 3, 4, 5};
+    for (int i = 0; i < 7; ++i) button(PageTitles[order[i]], 16, 126 + i * 49, 152, 40, NavOverlay + order[i]);
     button(L"Exit Input Overlay", 16, 570, 152, 36, ExitApp);
     text(L"Changes save automatically.", 216, 638, 400, 20, 0, true, ui.smallFont);
-    text(ui.status.c_str(), 216, 593, 578, 38, Status, true, ui.smallFont);
+    text(ui.status.c_str(), 216, 613, 578, 22, Status, true, ui.smallFont);
     if (page_ == 0) {
-        checkbox(L"Show overlay", 216, 113, 230, Enabled);
-        checkbox(L"Show mouse", 498, 113, 230, MouseVisible);
-        text(L"Keyboard layout", 216, 160, 276, 25, 0, false, ui.heading);
-        HWND layout = add(L"COMBOBOX", L"Keyboard layout", WS_TABSTOP | CBS_DROPDOWNLIST, 498, 157, 296, 110, Layout);
-        SendMessageW(layout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"ANSI"));
-        SendMessageW(layout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"ISO"));
-        text(L"Style", 216, 195, 578, 24, 0, false, ui.heading);
-        for (int i = 0; i < OverlayStyleCount; ++i) button(StyleNames[i], 216 + i * 118, 225, 106, 68, StyleFirst + i);
-        text(L"Size", 216, 315, 188, 24, 0, false, ui.heading);
-        text(L"", 424, 315, 80, 24, ScaleValue, true);
-        HWND scale = add(TRACKBAR_CLASSW, L"Overlay size", WS_TABSTOP | TBS_HORZ | TBS_NOTICKS, 208, 347, 280, 34, Scale);
-        SendMessageW(scale, TBM_SETRANGE, TRUE, MAKELPARAM(10, 200)); SendMessageW(scale, TBM_SETPAGESIZE, 0, 10);
-        text(L"Opacity", 516, 315, 188, 24, 0, false, ui.heading);
-        text(L"", 724, 315, 70, 24, OpacityValue, true);
-        HWND opacity = add(TRACKBAR_CLASSW, L"Overlay opacity", WS_TABSTOP | TBS_HORZ | TBS_NOTICKS, 508, 347, 290, 34, Opacity);
-        SendMessageW(opacity, TBM_SETRANGE, TRUE, MAKELPARAM(15, 100)); SendMessageW(opacity, TBM_SETPAGESIZE, 0, 5);
-        text(L"Accent", 216, 389, 500, 26, 0, false, ui.heading);
-        const wchar_t* accentNames[] = {L"Sky", L"Violet", L"Mint", L"Amber", L"Rose"};
-        for (int i = 0; i < 5; ++i) button(accentNames[i], 216 + i * 114, 427, 104, 38, AccentFirst + i);
-        button(L"Move overlay", 216, 496, 174, 38, MoveOverlay);
-        button(L"Reset position and size", 406, 496, 212, 38, ResetPosition);
-        text(L"Drag the overlay, then select Done moving.", 216, 548, 578, 26, 0, true);
+        text(L"Visual style", 216, 113, 360, 25, 0, false, ui.heading);
+        button(L"Size & position", 650, 108, 144, 30, OpenLayout);
+        for (int i = 0; i < OverlayStyleCount; ++i) button(StyleNames[i], 216 + i * 98, 149, 88, 36, StyleFirst + i);
+        add(L"STATIC", L"Overlay appearance preview", SS_OWNERDRAW, 216, 198, 578, 176, OverlayPreview);
+        button(L"Idle", 216, 382, 62, 30, PreviewIdle);
+        button(L"Pressed", 286, 382, 80, 30, PreviewPressed);
+        button(L"Dark background", 418, 382, 158, 30, PreviewBackground);
+        text(L"Layout", 598, 387, 51, 22, 0, true, ui.smallFont);
+        HWND previewLayout = add(L"COMBOBOX", L"Preview keyboard layout", WS_TABSTOP | CBS_DROPDOWNLIST, 658, 383, 136, 120, PreviewLayout);
+        SendMessageW(previewLayout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"ANSI"));
+        SendMessageW(previewLayout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"ISO"));
+        if (app_->settings.style == OverlayStyle::Gradient) {
+            text(L"Gradient presets", 216, 431, 276, 25, 0, false, ui.heading);
+            text(L"Gradient colors", 512, 431, 144, 25, 0, false, ui.heading);
+            button(L"Reset Gradient", 659, 427, 135, 30, ResetGradient);
+            for (int i = 0; i < 4; ++i)
+                button(ThemeNames[i + 1], 216 + (i % 2) * 143, 466 + (i / 2) * 54, 133, 47, ThemeFirst + i + 1);
+            button(L"Custom", 216, 576, 276, 30, ThemeFirst + static_cast<int>(ColorTheme::Custom));
+            text(L"Start color", 512, 466, 119, 22, 0, true, ui.smallFont);
+            text(L"End color", 674, 466, 120, 22, 0, true, ui.smallFont);
+            button(L"Choose start color", 512, 493, 31, 32, BackgroundStart);
+            HWND startHex = add(L"EDIT", L"", WS_TABSTOP | ES_AUTOHSCROLL | WS_BORDER, 549, 493, 81, 32, StartHex);
+            SendMessageW(startHex, EM_SETLIMITTEXT, 7, 0);
+            SendMessageW(startHex, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(Px(4), Px(2)));
+            button(L"Swap", 636, 493, 32, 32, SwapGradient);
+            button(L"Choose end color", 674, 493, 31, 32, BackgroundEnd);
+            HWND endHex = add(L"EDIT", L"", WS_TABSTOP | ES_AUTOHSCROLL | WS_BORDER, 711, 493, 83, 32, EndHex);
+            SendMessageW(endHex, EM_SETLIMITTEXT, 7, 0);
+            SendMessageW(endHex, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(Px(4), Px(2)));
+            add(L"STATIC", L"Gradient color range", SS_OWNERDRAW, 512, 535, 282, 10, GradientStrip);
+            text(L"Fill opacity", 512, 555, 204, 24);
+            text(L"", 724, 555, 70, 24, GradientFillValue, true);
+            HWND fill = add(TRACKBAR_CLASSW, L"Gradient fill opacity", WS_TABSTOP | TBS_HORZ | TBS_NOTICKS, 504, 582, 298, 30, GradientFillControl);
+            SendMessageW(fill, TBM_SETRANGE, TRUE, MAKELPARAM(4, 45));
+            SendMessageW(fill, TBM_SETPAGESIZE, 0, 5);
+        } else {
+            text(L"Pressed color", 216, 448, 578, 25, 0, false, ui.heading);
+            const wchar_t* accentNames[] = {L"Sky", L"Violet", L"Mint", L"Amber", L"Rose"};
+            for (int i = 0; i < 5; ++i) button(accentNames[i], 216 + i * 118, 488, 106, 38, AccentFirst + i);
+            button(L"", 216, 545, 214, 42, PressedColor);
+            text(L"Choose any color or enter its HEX code.", 451, 553, 343, 40, 0, true, ui.smallFont);
+        }
     } else if (page_ == 1) {
         text(L"Display position", 216, 113, 205, 24, 0, true); list(216, 145, 211, 418, SlotList);
         text(L"", 452, 113, 342, 28, SlotTitle, false, ui.heading);
@@ -368,7 +384,7 @@ void SettingsWindow::Build() {
         text(L"Device compatibility", 216, 492, 578, 26, 0, false, ui.heading);
         text(L"Requires an XInput-compatible controller. PlayStation layout changes the appearance; it does not add native PlayStation device support.",
             216, 532, 578, 48, 0, true);
-    } else {
+    } else if (page_ == 5) {
         text(L"Installed version", 216, 115, 578, 25, 0, false, ui.heading);
         text(L"", 216, 151, 578, 29, UpdateVersion, true);
         checkbox(L"Check for updates at startup", 216, 198, 578, AutoCheckUpdates);
@@ -382,12 +398,34 @@ void SettingsWindow::Build() {
             216, 448, 578, 132, UpdateNotes, nullptr, WS_EX_CLIENTEDGE);
         SendMessageW(notes, EM_SETLIMITTEXT, 262144, 0);
         SetWindowTheme(notes, L"", L"");
+    } else if (page_ == 6) {
+        checkbox(L"Show overlay", 216, 113, 230, Enabled);
+        checkbox(L"Show mouse", 498, 113, 230, MouseVisible);
+        text(L"Keyboard layout", 216, 164, 276, 25, 0, false, ui.heading);
+        HWND layout = add(L"COMBOBOX", L"Keyboard layout", WS_TABSTOP | CBS_DROPDOWNLIST, 498, 160, 296, 120, Layout);
+        SendMessageW(layout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"ANSI"));
+        SendMessageW(layout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"ISO"));
+        text(L"Size", 216, 231, 188, 24, 0, false, ui.heading);
+        text(L"", 424, 231, 80, 24, ScaleValue, true);
+        HWND scale = add(TRACKBAR_CLASSW, L"Overlay size", WS_TABSTOP | TBS_HORZ | TBS_NOTICKS, 208, 263, 280, 34, Scale);
+        SendMessageW(scale, TBM_SETRANGE, TRUE, MAKELPARAM(10, 200)); SendMessageW(scale, TBM_SETPAGESIZE, 0, 10);
+        text(L"Overall opacity", 516, 231, 188, 24, 0, false, ui.heading);
+        text(L"", 724, 231, 70, 24, OpacityValue, true);
+        HWND opacity = add(TRACKBAR_CLASSW, L"Overlay opacity", WS_TABSTOP | TBS_HORZ | TBS_NOTICKS, 508, 263, 290, 34, Opacity);
+        SendMessageW(opacity, TBM_SETRANGE, TRUE, MAKELPARAM(15, 100)); SendMessageW(opacity, TBM_SETPAGESIZE, 0, 5);
+        text(L"Position", 216, 338, 578, 25, 0, false, ui.heading);
+        button(L"Move overlay", 216, 379, 174, 38, MoveOverlay);
+        button(L"Reset position and size", 406, 379, 212, 38, ResetPosition);
+        text(L"Drag the overlay, then select Done moving. Switching to another application ends moving automatically.",
+            216, 442, 578, 45, 0, true);
+        text(L"Size and position stay anchored when your display resolution changes. Reset restores 100% size at the bottom-left corner.",
+            216, 505, 578, 51, 0, true, ui.smallFont);
     }
     ui.updating = false; UpdateControls(); InvalidateRect(hwnd_, nullptr, TRUE);
 }
 
 void SettingsWindow::SelectPage(int page) {
-    if (page < 0 || page > 5 || page == page_) return;
+    if (page < 0 || page > 6 || page == page_) return;
     if (app_->overlay.Editing()) app_->EditPosition(false);
     CancelCapture(); page_ = page; ui.status.clear(); Build(); SetFocus(GetDlgItem(hwnd_, NavOverlay + page_));
 }
@@ -396,14 +434,23 @@ void SettingsWindow::UpdateControls() {
     ui.updating = true;
     Settings& settings = app_->settings;
     if (page_ == 0) {
-        Check(hwnd_, Enabled, settings.enabled); Check(hwnd_, MouseVisible, settings.showMouse);
-        SendDlgItemMessageW(hwnd_, Layout, CB_SETCURSEL, settings.isoLayout ? 1 : 0, 0);
-        SendDlgItemMessageW(hwnd_, Scale, TBM_SETPOS, TRUE, settings.scale);
-        SendDlgItemMessageW(hwnd_, Opacity, TBM_SETPOS, TRUE, settings.opacity);
-        SetText(hwnd_, ScaleValue, std::to_wstring(settings.scale) + L"%"); SetText(hwnd_, OpacityValue, std::to_wstring(settings.opacity) + L"%");
-        SetText(hwnd_, MoveOverlay, app_->overlay.Editing() ? L"Done moving" : L"Move overlay");
-        for (int i = AccentFirst; i <= AccentLast; ++i) InvalidateRect(GetDlgItem(hwnd_, i), nullptr, FALSE);
-        for (int i = StyleFirst; i <= StyleLast; ++i) InvalidateRect(GetDlgItem(hwnd_, i), nullptr, FALSE);
+        for (int i = StyleFirst; i <= StyleLast; ++i) InvalidateControl(hwnd_, i);
+        for (int id : {OverlayPreview, PreviewIdle, PreviewPressed, PreviewBackground}) InvalidateControl(hwnd_, id);
+        SetText(hwnd_, PreviewBackground, ui.previewLight ? L"Light background" : L"Dark background");
+        SendDlgItemMessageW(hwnd_, PreviewLayout, CB_SETCURSEL, ui.previewIso ? 1 : 0, 0);
+        if (settings.style == OverlayStyle::Gradient) {
+            const auto palette = ThemePalette(settings);
+            if (GetFocus() != GetDlgItem(hwnd_, StartHex)) SetText(hwnd_, StartHex, ColorHex(palette.start));
+            if (GetFocus() != GetDlgItem(hwnd_, EndHex)) SetText(hwnd_, EndHex, ColorHex(palette.end));
+            SendDlgItemMessageW(hwnd_, GradientFillControl, TBM_SETPOS, TRUE, settings.gradientFillOpacity);
+            SetText(hwnd_, GradientFillValue, std::to_wstring(settings.gradientFillOpacity) + L"%");
+            for (int id = ThemeFirst; id <= ThemeLast; ++id) InvalidateControl(hwnd_, id);
+            for (int id : {BackgroundStart, BackgroundEnd, GradientStrip}) InvalidateControl(hwnd_, id);
+        } else {
+            SetText(hwnd_, PressedColor, ColorHex(settings.accent));
+            for (int id = AccentFirst; id <= AccentLast; ++id) InvalidateControl(hwnd_, id);
+            InvalidateControl(hwnd_, PressedColor);
+        }
     } else if (page_ == 1) {
         const auto& slot = settings.slots[static_cast<size_t>(ui.selectedSlot)];
         HWND list = GetDlgItem(hwnd_, SlotList); SendMessageW(list, WM_SETREDRAW, FALSE, 0);
@@ -455,7 +502,7 @@ void SettingsWindow::UpdateControls() {
         SendDlgItemMessageW(hwnd_, ControllerIndex, CB_SETCURSEL, settings.controllerIndex + 1, 0);
         SendDlgItemMessageW(hwnd_, ControllerDeadzone, TBM_SETPOS, TRUE, settings.controllerDeadzone);
         SetText(hwnd_, ControllerDeadzoneValue, std::to_wstring(settings.controllerDeadzone) + L"%");
-    } else {
+    } else if (page_ == 5) {
         const auto& result = app_->updateResult;
         const char* build = CurrentBuildCommit();
         const std::string commit = build ? build : "";
@@ -471,6 +518,14 @@ void SettingsWindow::UpdateControls() {
         SetText(hwnd_, UpdateNotesTitle, result.info.version.empty() ? L"Release notes" : L"Release notes  \u2022  " + result.info.version);
         const auto notes = UpdateNotesText(result);
         if (Text(hwnd_, UpdateNotes) != notes) SetText(hwnd_, UpdateNotes, notes);
+    } else if (page_ == 6) {
+        Check(hwnd_, Enabled, settings.enabled); Check(hwnd_, MouseVisible, settings.showMouse);
+        SendDlgItemMessageW(hwnd_, Layout, CB_SETCURSEL, settings.isoLayout ? 1 : 0, 0);
+        SendDlgItemMessageW(hwnd_, Scale, TBM_SETPOS, TRUE, settings.scale);
+        SendDlgItemMessageW(hwnd_, Opacity, TBM_SETPOS, TRUE, settings.opacity);
+        SetText(hwnd_, ScaleValue, std::to_wstring(settings.scale) + L"%");
+        SetText(hwnd_, OpacityValue, std::to_wstring(settings.opacity) + L"%");
+        SetText(hwnd_, MoveOverlay, app_->overlay.Editing() ? L"Done moving" : L"Move overlay");
     }
     SetText(hwnd_, Status, ui.status); ui.updating = false;
 }
@@ -504,22 +559,93 @@ void SettingsWindow::CaptureInput(int input) {
 
 void SettingsWindow::Command(int id, int code) {
     if (ui.updating || !app_) return;
-    if (id >= NavOverlay && id <= NavUpdates) { SelectPage(id - NavOverlay); return; }
+    if (id >= NavOverlay && id <= NavLayout) { SelectPage(id - NavOverlay); return; }
     Settings& settings = app_->settings;
+    if (id >= ThemeFirst && id <= ThemeLast) {
+        if (code != BN_CLICKED || settings.style != OverlayStyle::Gradient || id == ThemeFirst) return;
+        settings.colorTheme = static_cast<ColorTheme>(id - ThemeFirst);
+        ui.status.clear(); app_->Changed(); UpdateControls(); return;
+    }
     if (id >= StyleFirst && id <= StyleLast) {
+        if (code != BN_CLICKED) return;
         settings.style = static_cast<OverlayStyle>(id - StyleFirst);
-        app_->Changed(); UpdateControls(); return;
+        ui.status.clear(); Build(); app_->Changed(); SetFocus(GetDlgItem(hwnd_, id)); return;
     }
     if (id >= AccentFirst && id <= AccentLast) {
         settings.accent = Accents[static_cast<size_t>(id - AccentFirst)]; app_->Changed(); UpdateControls(); return;
     }
     switch (id) {
+    case OpenLayout: SelectPage(6); return;
+    case PreviewIdle: case PreviewPressed:
+        if (code != BN_CLICKED) return;
+        ui.previewPressed = id == PreviewPressed; UpdateControls(); return;
+    case PreviewBackground:
+        if (code != BN_CLICKED) return;
+        ui.previewLight = !ui.previewLight; UpdateControls(); return;
+    case PreviewLayout:
+        if (code != CBN_SELCHANGE) return;
+        ui.previewIso = SendDlgItemMessageW(hwnd_, PreviewLayout, CB_GETCURSEL, 0, 0) == 1;
+        InvalidateControl(hwnd_, OverlayPreview); return;
+    case StartHex: case EndHex: {
+        if (code != EN_CHANGE && code != EN_KILLFOCUS) return;
+        if (settings.style != OverlayStyle::Gradient) return;
+        COLORREF chosen = 0;
+        const bool valid = ParseColorHex(Text(hwnd_, id), chosen);
+        if (code == EN_KILLFOCUS) {
+            ui.updating = true;
+            const auto palette = ThemePalette(settings);
+            SetText(hwnd_, id, ColorHex(id == StartHex ? palette.start : palette.end));
+            ui.updating = false;
+            ui.status.clear(); SetText(hwnd_, Status, ui.status); return;
+        }
+        if (!valid) {
+            ui.status = L"Enter six HEX digits, for example #FFB25B. The current color stays unchanged.";
+            SetText(hwnd_, Status, ui.status); InvalidateControl(hwnd_, id); return;
+        }
+        const auto palette = ThemePalette(settings);
+        if (chosen != (id == StartHex ? palette.start : palette.end)) {
+            settings.backgroundStart = id == StartHex ? chosen : palette.start;
+            settings.backgroundEnd = id == EndHex ? chosen : palette.end;
+            settings.colorTheme = ColorTheme::Custom;
+            ui.status.clear(); app_->Changed();
+        } else ui.status.clear();
+        UpdateControls(); return;
+    }
+    case SwapGradient: {
+        if (code != BN_CLICKED || settings.style != OverlayStyle::Gradient) return;
+        const auto palette = ThemePalette(settings);
+        settings.backgroundStart = palette.end; settings.backgroundEnd = palette.start;
+        settings.colorTheme = ColorTheme::Custom;
+        ui.status.clear(); app_->Changed(); break;
+    }
+    case ResetGradient: {
+        if (code != BN_CLICKED || settings.style != OverlayStyle::Gradient) return;
+        const auto defaults = DefaultSettings();
+        settings.backgroundStart = defaults.backgroundStart; settings.backgroundEnd = defaults.backgroundEnd;
+        settings.gradientFillOpacity = defaults.gradientFillOpacity; settings.colorTheme = ColorTheme::Sunset;
+        ui.status = L"Gradient colors and fill opacity reset to Sunset."; app_->Changed(); break;
+    }
+    case BackgroundStart: case BackgroundEnd: case PressedColor: {
+        if (code != BN_CLICKED) return;
+        const auto palette = ThemePalette(settings);
+        COLORREF chosen = id == PressedColor ? settings.accent : id == BackgroundStart ? palette.start : palette.end;
+        const wchar_t* title = id == PressedColor ? L"Pressed color" : id == BackgroundStart ? L"Gradient start" : L"Gradient end";
+        if (!ChooseOverlayColor(hwnd_, chosen, title)) return;
+        if (id == PressedColor) settings.accent = chosen;
+        else {
+            settings.backgroundStart = id == BackgroundStart ? chosen : palette.start;
+            settings.backgroundEnd = id == BackgroundEnd ? chosen : palette.end;
+            settings.colorTheme = ColorTheme::Custom;
+        }
+        ui.status.clear(); app_->Changed(); break;
+    }
     case ExitApp: app_->Quit(); return;
     case Enabled: settings.enabled = Checked(hwnd_, Enabled); app_->Changed(); break;
     case MouseVisible: settings.showMouse = Checked(hwnd_, MouseVisible); app_->Changed(); break;
     case Layout:
         if (code != CBN_SELCHANGE) return;
-        settings.isoLayout = SendDlgItemMessageW(hwnd_, Layout, CB_GETCURSEL, 0, 0) == 1; app_->Changed();
+        settings.isoLayout = SendDlgItemMessageW(hwnd_, Layout, CB_GETCURSEL, 0, 0) == 1;
+        ui.previewIso = settings.isoLayout; app_->Changed();
         break;
     case MoveOverlay:
         ui.status.clear();
@@ -691,13 +817,15 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wParam,
         break;
     case WM_HSCROLL: {
         const int id = GetDlgCtrlID(reinterpret_cast<HWND>(lParam));
-        if (id == Scale || id == Opacity || id == ControllerDeadzone) {
+        if (id == Scale || id == Opacity || id == ControllerDeadzone || id == GradientFillControl) {
             const int value = static_cast<int>(SendMessageW(reinterpret_cast<HWND>(lParam), TBM_GETPOS, 0, 0));
-            const int valueId = id == Scale ? ScaleValue : (id == Opacity ? OpacityValue : ControllerDeadzoneValue);
+            const int valueId = id == Scale ? ScaleValue : id == Opacity ? OpacityValue :
+                id == GradientFillControl ? GradientFillValue : ControllerDeadzoneValue;
             SetText(hwnd, valueId, std::to_wstring(value) + L"%");
+            if (id == GradientFillControl) InvalidateControl(hwnd, OverlayPreview);
             if (LOWORD(wParam) != TB_THUMBTRACK) {
                 int& setting = id == Scale ? self->app_->settings.scale :
-                    (id == Opacity ? self->app_->settings.opacity : self->app_->settings.controllerDeadzone);
+                    id == Opacity ? self->app_->settings.opacity : id == GradientFillControl ? self->app_->settings.gradientFillOpacity : self->app_->settings.controllerDeadzone;
                 if (setting != value) { setting = value; self->app_->Changed(); }
                 self->UpdateControls();
             }
@@ -706,7 +834,7 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wParam,
     }
     case WM_NOTIFY: {
         const auto* custom = reinterpret_cast<NMCUSTOMDRAW*>(lParam);
-        if (custom->hdr.code == NM_CUSTOMDRAW && (custom->hdr.idFrom == Scale || custom->hdr.idFrom == Opacity || custom->hdr.idFrom == ControllerDeadzone)) {
+        if (custom->hdr.code == NM_CUSTOMDRAW && (custom->hdr.idFrom == Scale || custom->hdr.idFrom == Opacity || custom->hdr.idFrom == ControllerDeadzone || custom->hdr.idFrom == GradientFillControl)) {
             if (custom->dwDrawStage == CDDS_PREPAINT) return CDRF_NOTIFYITEMDRAW;
             if (custom->dwDrawStage == CDDS_ITEMPREPAINT) {
                 if (custom->dwItemSpec == TBCD_CHANNEL) { Fill(custom->hdc, custom->rc, Border); return CDRF_SKIPDEFAULT; }
@@ -729,16 +857,39 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wParam,
         return reinterpret_cast<LRESULT>(ui.background);
     }
     case WM_CTLCOLOREDIT: case WM_CTLCOLORLISTBOX: {
-        HDC dc = reinterpret_cast<HDC>(wParam); SetTextColor(dc, Foreground); SetBkColor(dc, Surface); return reinterpret_cast<LRESULT>(ui.surface);
+        HDC dc = reinterpret_cast<HDC>(wParam);
+        const int id = GetDlgCtrlID(reinterpret_cast<HWND>(lParam));
+        COLORREF color = 0;
+        const bool invalid = (id == StartHex || id == EndHex) && !ParseColorHex(Text(hwnd, id), color);
+        SetTextColor(dc, invalid ? RGB(251, 143, 153) : Foreground); SetBkColor(dc, Surface); return reinterpret_cast<LRESULT>(ui.surface);
     }
     case WM_ERASEBKGND: return 1;
     case WM_DRAWITEM: {
-        auto* item = reinterpret_cast<DRAWITEMSTRUCT*>(lParam); if (item->CtlType != ODT_BUTTON) break;
-        const bool nav = item->CtlID >= NavOverlay && item->CtlID <= NavUpdates;
+        auto* item = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
+        if (item->CtlType == ODT_STATIC && item->CtlID == OverlayPreview) {
+            Settings preview = self->app_->settings;
+            preview.isoLayout = ui.previewIso;
+            if (HWND fill = GetDlgItem(hwnd, GradientFillControl)) preview.gradientFillOpacity = static_cast<int>(SendMessageW(fill, TBM_GETPOS, 0, 0));
+            DrawOverlayPreview(item->hDC, item->rcItem, preview, ui.previewPressed, ui.previewLight);
+            return TRUE;
+        }
+        if (item->CtlType == ODT_STATIC && item->CtlID == GradientStrip) {
+            Fill(item->hDC, item->rcItem, Background);
+            const auto palette = ThemePalette(self->app_->settings);
+            DrawColorConnection(item->hDC, item->rcItem, palette.start, palette.end, false);
+            return TRUE;
+        }
+        if (item->CtlType != ODT_BUTTON) break;
+        const bool nav = item->CtlID >= NavOverlay && item->CtlID <= NavLayout;
         const bool styleCard = item->CtlID >= StyleFirst && item->CtlID <= StyleLast;
+        const bool themeCard = item->CtlID >= ThemeFirst && item->CtlID <= ThemeLast;
+        const bool colorButton = item->CtlID >= BackgroundStart && item->CtlID <= PressedColor;
+        const ColorTheme activeTheme = self->app_->settings.colorTheme == ColorTheme::Original ? ColorTheme::Sunset : self->app_->settings.colorTheme;
         const bool selected = (nav && static_cast<int>(item->CtlID - NavOverlay) == self->page_) ||
-            (styleCard && static_cast<int>(item->CtlID - StyleFirst) == static_cast<int>(self->app_->settings.style));
-        const COLORREF accent = self->app_->settings.accent;
+            (styleCard && static_cast<int>(item->CtlID - StyleFirst) == static_cast<int>(self->app_->settings.style)) ||
+            (themeCard && static_cast<int>(item->CtlID - ThemeFirst) == static_cast<int>(activeTheme)) ||
+            (item->CtlID == PreviewIdle && !ui.previewPressed) || (item->CtlID == PreviewPressed && ui.previewPressed);
+        const COLORREF accent = self->app_->settings.style == OverlayStyle::Gradient ? ThemePalette(self->app_->settings).middle : self->app_->settings.accent;
         const bool primary = GetPropW(item->hwndItem, L"InputOverlay.Primary") != nullptr;
         const bool swatch = item->CtlID >= AccentFirst && item->CtlID <= AccentLast;
         COLORREF fill = selected ? RGB(30, 49, 64) : (nav ? Sidebar : Surface);
@@ -754,9 +905,31 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wParam,
         SelectObject(item->hDC, oldBrush); SelectObject(item->hDC, oldPen); DeleteObject(brush); DeleteObject(pen);
         RECT labelRect = item->rcItem; UINT align = DT_CENTER;
         if (nav) { labelRect.left += Px(15); align = DT_LEFT; }
-        if (styleCard) {
-            DrawStylePreview(item->hDC, item->rcItem, static_cast<OverlayStyle>(item->CtlID - StyleFirst), accent, fill);
-            labelRect.left += Px(6); labelRect.right -= Px(6); labelRect.top += Px(42); labelRect.bottom -= Px(5);
+        if (styleCard) { labelRect.left += Px(4); labelRect.right -= Px(4); }
+        if (themeCard) {
+            auto preview = self->app_->settings;
+            preview.colorTheme = static_cast<ColorTheme>(item->CtlID - ThemeFirst);
+            DrawThemePreview(item->hDC, item->rcItem, preview);
+            labelRect.left += Px(11); align = DT_LEFT;
+            if (preview.colorTheme == ColorTheme::Custom) labelRect.right -= Px(108);
+            else { labelRect.top += Px(3); labelRect.bottom = labelRect.top + Px(22); labelRect.right -= Px(20); }
+            if (selected && preview.colorTheme != ColorTheme::Custom) {
+                RECT mark{item->rcItem.right - Px(24), item->rcItem.top + Px(4), item->rcItem.right - Px(7), item->rcItem.top + Px(24)};
+                DrawTextAt(item->hDC, L"\u2713", mark, ui.smallFont, Foreground, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            }
+        }
+        if (colorButton) {
+            const auto palette = ThemePalette(self->app_->settings);
+            const COLORREF color = item->CtlID == PressedColor ? self->app_->settings.accent :
+                item->CtlID == BackgroundStart ? palette.start : palette.end;
+            RECT swatchRect = item->rcItem;
+            if (item->CtlID == PressedColor) swatchRect = {item->rcItem.left + Px(14), item->rcItem.top + Px(12), item->rcItem.left + Px(32), item->rcItem.top + Px(30)};
+            else InflateRect(&swatchRect, -Px(6), -Px(6));
+            HBRUSH swatchBrush = CreateSolidBrush(color);
+            oldBrush = SelectObject(item->hDC, swatchBrush); oldPen = SelectObject(item->hDC, GetStockObject(NULL_PEN));
+            RoundRect(item->hDC, swatchRect.left, swatchRect.top, swatchRect.right, swatchRect.bottom, Px(5), Px(5));
+            SelectObject(item->hDC, oldBrush); SelectObject(item->hDC, oldPen); DeleteObject(swatchBrush);
+            if (item->CtlID == PressedColor) labelRect.left += Px(31);
         }
         if (swatch) {
             const COLORREF accent = Accents[item->CtlID - AccentFirst];
@@ -769,7 +942,9 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wParam,
             }
         }
         wchar_t label[128]{}; GetWindowTextW(item->hwndItem, label, 128);
-        DrawTextAt(item->hDC, label, labelRect, ui.normal, textColor, align | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        if (colorButton && item->CtlID != PressedColor) label[0] = L'\0';
+        if (item->CtlID == SwapGradient) wcscpy_s(label, L"\u21C4");
+        DrawTextAt(item->hDC, label, labelRect, ui.normal, textColor, align | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
         if ((item->itemState & ODS_FOCUS) && !(item->itemState & ODS_NOFOCUSRECT)) {
             RECT focus = item->rcItem; InflateRect(&focus, -Px(4), -Px(4)); DrawFocusRect(item->hDC, &focus);
         }

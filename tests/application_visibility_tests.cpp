@@ -21,6 +21,19 @@ void Check(bool condition, const char* message) {
     if (!condition) throw std::runtime_error(message);
 }
 
+std::string ReadConfiguration(const std::wstring& path) {
+    HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    Check(file != INVALID_HANDLE_VALUE, "Saved configuration must open");
+    const DWORD size = GetFileSize(file, nullptr);
+    if (size == INVALID_FILE_SIZE || size > 1024 * 1024) { CloseHandle(file); throw std::runtime_error("Saved configuration size must be bounded"); }
+    std::string content(size, '\0');
+    DWORD read = 0;
+    const BOOL result = ReadFile(file, content.data(), size, &read, nullptr);
+    CloseHandle(file);
+    Check(result && read == size, "Saved configuration must read completely");
+    return content;
+}
+
 void Pump() {
     MSG message{};
     while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
@@ -180,12 +193,71 @@ void RunTests() {
     Focus(app.preferences.Handle());
     for (int style = 0; style < OverlayStyleCount; ++style) {
         SendMessageW(app.preferences.Handle(), WM_COMMAND, MAKEWPARAM(230 + style, BN_CLICKED), 0);
-        SendMessageW(app.preferences.Handle(), WM_COMMAND, MAKEWPARAM(220 + style, BN_CLICKED), 0);
-        app.settings.scale = 40 + style * 35;
+        SendMessageW(app.preferences.Handle(), WM_COMMAND, MAKEWPARAM(220 + style % 5, BN_CLICKED), 0);
+        app.settings.scale = 40 + style * 25;
         app.settings.opacity = 35 + style * 10;
         app.Changed();
         harness.Expect(false, false, "Appearance changes must preserve application filtering");
     }
+    const Settings beforeGradient = app.settings;
+    const HWND settingsWindow = app.preferences.Handle();
+    Check(GetDlgItem(settingsWindow, StartHex) && GetDlgItem(settingsWindow, GradientFillControl),
+        "Gradient style must expose endpoint controls and fill opacity on the Overlay page");
+    SetDlgItemTextW(settingsWindow, StartHex, L"#123456");
+    SetDlgItemTextW(settingsWindow, EndHex, L"abcdef");
+    Check(app.settings.colorTheme == ColorTheme::Custom && app.settings.backgroundStart == RGB(18, 52, 86) &&
+        app.settings.backgroundEnd == RGB(171, 205, 239), "Valid endpoint HEX edits must create a custom gradient");
+    const COLORREF customStart = app.settings.backgroundStart, customEnd = app.settings.backgroundEnd;
+    for (int theme = 1; theme < ColorThemeCount; ++theme) {
+        SendMessageW(app.preferences.Handle(), WM_COMMAND, MAKEWPARAM(800 + theme, BN_CLICKED), 0);
+        Check(static_cast<int>(app.settings.colorTheme) == theme, "Theme cards must select their matching theme");
+        Check(app.settings.backgroundStart == customStart && app.settings.backgroundEnd == customEnd,
+            "Browsing presets must preserve the saved custom gradient endpoints");
+        Check(app.settings.accent == beforeGradient.accent, "Gradient presets must not overwrite the pressed color of other styles");
+        harness.Expect(false, false, "Theme changes must preserve application filtering");
+    }
+    Check(ThemePalette(app.settings).start == customStart && ThemePalette(app.settings).end == customEnd,
+        "Returning to Custom must restore the exact previously edited endpoints");
+    const std::string beforeInvalid = ReadConfiguration(app.configPath);
+    SetDlgItemTextW(settingsWindow, StartHex, L"#GGGGGG");
+    Check(app.settings.backgroundStart == customStart && ReadConfiguration(app.configPath) == beforeInvalid,
+        "Invalid endpoint HEX input must not alter colors or the saved configuration");
+    SendMessageW(settingsWindow, WM_COMMAND, MAKEWPARAM(StartHex, EN_KILLFOCUS), 0);
+    const std::string beforePreview = ReadConfiguration(app.configPath);
+    SendMessageW(settingsWindow, WM_COMMAND, MAKEWPARAM(PreviewPressed, BN_CLICKED), 0);
+    SendMessageW(settingsWindow, WM_COMMAND, MAKEWPARAM(PreviewBackground, BN_CLICKED), 0);
+    SendDlgItemMessageW(settingsWindow, PreviewLayout, CB_SETCURSEL, beforeGradient.isoLayout ? 0 : 1, 0);
+    SendMessageW(settingsWindow, WM_COMMAND, MAKEWPARAM(PreviewLayout, CBN_SELCHANGE), 0);
+    SendMessageW(settingsWindow, WM_COMMAND, MAKEWPARAM(PreviewIdle, BN_CLICKED), 0);
+    Check(app.settings.isoLayout == beforeGradient.isoLayout && ReadConfiguration(app.configPath) == beforePreview,
+        "Preview pressed state, background, and keyboard layout must not change or save live overlay preferences");
+    Check(std::none_of(app.pressed.begin(), app.pressed.end(), [](bool down) { return down; }),
+        "Pressed preview must not inject input into the actual overlay");
+    harness.Expect(false, false, "Preview controls must not show a filtered overlay");
+    SendMessageW(settingsWindow, WM_COMMAND, MAKEWPARAM(SwapGradient, BN_CLICKED), 0);
+    Check(app.settings.backgroundStart == customEnd && app.settings.backgroundEnd == customStart && app.settings.colorTheme == ColorTheme::Custom,
+        "Swap must reverse only the two gradient endpoints");
+    HWND fill = GetDlgItem(settingsWindow, GradientFillControl);
+    SendMessageW(fill, TBM_SETPOS, TRUE, 45);
+    SendMessageW(settingsWindow, WM_HSCROLL, TB_THUMBTRACK, reinterpret_cast<LPARAM>(fill));
+    Check(app.settings.gradientFillOpacity == beforeGradient.gradientFillOpacity,
+        "Dragging fill opacity must preview without saving partial values");
+    SendMessageW(settingsWindow, WM_HSCROLL, TB_ENDTRACK, reinterpret_cast<LPARAM>(fill));
+    Check(app.settings.gradientFillOpacity == 45, "Releasing fill opacity must save the selected amount");
+    SendMessageW(settingsWindow, WM_COMMAND, MAKEWPARAM(ResetGradient, BN_CLICKED), 0);
+    Check(app.settings.gradientFillOpacity == 16 && app.settings.colorTheme == ColorTheme::Sunset,
+        "Reset Gradient must restore the Sunset palette and default transparent fill");
+    Check(app.settings.onlySelectedApps == beforeGradient.onlySelectedApps && app.settings.applications == beforeGradient.applications &&
+        app.settings.enabled == beforeGradient.enabled && app.settings.x == beforeGradient.x && app.settings.y == beforeGradient.y &&
+        app.settings.anchorRight == beforeGradient.anchorRight && app.settings.anchorBottom == beforeGradient.anchorBottom &&
+        app.settings.monitor == beforeGradient.monitor && app.settings.scale == beforeGradient.scale && app.settings.opacity == beforeGradient.opacity &&
+        app.settings.accent == beforeGradient.accent && app.settings.isoLayout == beforeGradient.isoLayout,
+        "Gradient editing and reset must preserve application restrictions, visibility, layout, position, size, overall opacity, and pressed accent");
+    SendMessageW(settingsWindow, WM_COMMAND, MAKEWPARAM(NavLayout, BN_CLICKED), 0);
+    Check(GetDlgItem(settingsWindow, Scale) && GetDlgItem(settingsWindow, Opacity) && GetDlgItem(settingsWindow, MoveOverlay) &&
+        GetDlgItem(settingsWindow, ResetPosition) && GetDlgItem(settingsWindow, Enabled) && GetDlgItem(settingsWindow, Layout),
+        "The Layout page must retain shared positioning, visibility, sizing, and keyboard layout controls");
+    SendMessageW(app.preferences.Handle(), WM_COMMAND, MAKEWPARAM(100, BN_CLICKED), 0);
     Settings saved;
     Check(LoadSettings(app.configPath, saved) && saved.onlySelectedApps && saved.applications == app.settings.applications,
         "Appearance changes must persist the application restriction");
@@ -202,6 +274,11 @@ void RunTests() {
     harness.Expect(true, false, "Returning to an allowlisted application must show the overlay again");
     app.Toggle();
     harness.Expect(false, false, "Manual hide must hide the overlay in an allowlisted application");
+    SendMessageW(settingsWindow, WM_COMMAND, MAKEWPARAM(ThemeFirst + static_cast<int>(ColorTheme::Aurora), BN_CLICKED), 0);
+    SendMessageW(settingsWindow, WM_COMMAND, MAKEWPARAM(ResetGradient, BN_CLICKED), 0);
+    harness.Expect(false, false, "Editing and resetting Gradient must preserve a manually hidden overlay");
+    Check(LoadSettings(app.configPath, saved) && !saved.enabled && saved.onlySelectedApps,
+        "Gradient edits must persist manual hide and application filtering together");
     Focus(harness.outside);
     app.UpdateVisibility();
     Focus(allowed.window);

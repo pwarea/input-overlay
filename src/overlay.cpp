@@ -1,5 +1,6 @@
 #include "app.hpp"
 #include "geometry.hpp"
+#include "colors.hpp"
 #include <objidl.h>
 #include <gdiplus.h>
 #include <algorithm>
@@ -53,14 +54,16 @@ void Label(Gdiplus::Graphics& graphics, const std::wstring& label,
 }
 
 Gdiplus::Color Accent(const Settings& settings, BYTE alpha, unsigned white = 0) {
+    const COLORREF accent = settings.style == OverlayStyle::Gradient ? ThemeColorAt(settings, 0.5f) : settings.accent;
     const auto mix = [white](BYTE channel) {
         return static_cast<BYTE>((channel * (100 - white) + 255 * white) / 100);
     };
-    return Gdiplus::Color(alpha, mix(GetRValue(settings.accent)),
-        mix(GetGValue(settings.accent)), mix(GetBValue(settings.accent)));
+    return Gdiplus::Color(alpha, mix(GetRValue(accent)),
+        mix(GetGValue(accent)), mix(GetBValue(accent)));
 }
 
 Gdiplus::Color PressedInk(const Settings& settings) {
+    if (settings.style == OverlayStyle::Gradient) return Gdiplus::Color(255, 255, 255, 255);
     const unsigned light = GetRValue(settings.accent) * 299 +
         GetGValue(settings.accent) * 587 + GetBValue(settings.accent) * 114;
     return light >= 145000 ? Gdiplus::Color(255, 13, 31, 43) : Gdiplus::Color(255, 255, 255, 255);
@@ -98,8 +101,35 @@ void Chamfered(Gdiplus::GraphicsPath& path, float x, float y, float w, float h, 
     path.AddPolygon(points, 8);
 }
 
+Gdiplus::Color Tint(COLORREF color, BYTE alpha) {
+    return Gdiplus::Color(alpha, GetRValue(color), GetGValue(color), GetBValue(color));
+}
+
+void GradientPoints(const Settings& settings, const Gdiplus::RectF& bounds,
+                    Gdiplus::PointF& start, Gdiplus::PointF& end) {
+    if (settings.device == OverlayDevice::Controller) {
+        start = {91.0f, 30.0f};
+        end = {419.0f, 190.0f};
+    } else if (bounds.X >= 425.0f) {
+        start = {409.0f, 39.0f};
+        end = {529.0f, 229.0f};
+    } else {
+        start = {0.0f, 0.0f};
+        end = {510.0f, 210.0f};
+    }
+}
+
 void Surface(Gdiplus::Graphics& graphics, Gdiplus::GraphicsPath& path,
              const Settings& settings, bool down, const Gdiplus::RectF& bounds) {
+    if (settings.style == OverlayStyle::Gradient) {
+        const BYTE alpha = down ? 138 : static_cast<BYTE>(std::clamp(settings.gradientFillOpacity, 4, 45) * 255 / 100);
+        Gdiplus::PointF start, end;
+        GradientPoints(settings, bounds, start, end);
+        const auto palette = ThemePalette(settings);
+        Gdiplus::LinearGradientBrush gradient(start, end, Tint(palette.start, alpha), Tint(palette.end, alpha));
+        graphics.FillPath(&gradient, &path);
+        return;
+    }
     if (settings.style == OverlayStyle::Pearl) {
         Gdiplus::LinearGradientBrush pearl(bounds, Gdiplus::Color(0, 255, 255, 255),
             Gdiplus::Color(0, 255, 255, 255), Gdiplus::LinearGradientModeVertical);
@@ -134,6 +164,31 @@ void Surface(Gdiplus::Graphics& graphics, Gdiplus::GraphicsPath& path,
 
 void Stroke(Gdiplus::Graphics& graphics, Gdiplus::GraphicsPath& path,
             const Settings& settings, bool down, float width, float contrastWidth, bool halo = false) {
+    if (settings.style == OverlayStyle::Gradient) {
+        Gdiplus::Pen shadow(Gdiplus::Color(107, 8, 17, 29), contrastWidth);
+        shadow.SetLineJoin(Gdiplus::LineJoinRound);
+        shadow.SetStartCap(Gdiplus::LineCapRound);
+        shadow.SetEndCap(Gdiplus::LineCapRound);
+        graphics.DrawPath(&shadow, &path);
+        if (down) {
+            Gdiplus::Pen edge(Gdiplus::Color(242, 255, 244, 233), 1.6f);
+            edge.SetLineJoin(Gdiplus::LineJoinRound);
+            graphics.DrawPath(&edge, &path);
+        } else {
+            Gdiplus::RectF bounds;
+            path.GetBounds(&bounds);
+            Gdiplus::PointF start, end;
+            GradientPoints(settings, bounds, start, end);
+            const auto palette = ThemePalette(settings);
+            Gdiplus::LinearGradientBrush gradient(start, end, Tint(palette.start, 217), Tint(palette.end, 217));
+            Gdiplus::Pen edge(&gradient, std::min(width, 1.4f));
+            edge.SetLineJoin(Gdiplus::LineJoinRound);
+            edge.SetStartCap(Gdiplus::LineCapRound);
+            edge.SetEndCap(Gdiplus::LineCapRound);
+            graphics.DrawPath(&edge, &path);
+        }
+        return;
+    }
     if (settings.style == OverlayStyle::Pearl) {
         Gdiplus::Pen depth(Gdiplus::Color(110, 19, 37, 53), contrastWidth);
         depth.SetLineJoin(Gdiplus::LineJoinRound);
@@ -181,7 +236,7 @@ void Key(Gdiplus::Graphics& graphics, const Settings& settings,
     Gdiplus::GraphicsPath cap;
     if (settings.style == OverlayStyle::Circuit) Chamfered(cap, x, y, w, h, 5.0f);
     else Rounded(cap, x, y, w, h, settings.style == OverlayStyle::Pearl ? 7.0f :
-        settings.style == OverlayStyle::Glass ? 6.0f : 4.5f);
+        settings.style == OverlayStyle::Glass ? 6.0f : settings.style == OverlayStyle::Gradient ? 5.0f : 4.5f);
     Surface(graphics, cap, settings, down, Gdiplus::RectF(x, y, w, h));
     Stroke(graphics, cap, settings, down, 1.3f, 2.8f, true);
     if (settings.style == OverlayStyle::Pearl) {
@@ -213,6 +268,12 @@ void Key(Gdiplus::Graphics& graphics, const Settings& settings,
         graphics.DrawLines(&mark, corner, 3);
         graphics.DrawLine(&mark, x + w * 0.5f - 6.0f, y + h - 4.0f,
             x + w * 0.5f + 6.0f, y + h - 4.0f);
+    }
+    if (settings.style == OverlayStyle::Gradient) {
+        PearlLabel(graphics, settings.slots[slot].label, font,
+            down ? PressedInk(settings) : Gdiplus::Color(255, 244, 249, 255),
+            x + 3.0f, y, w - 6.0f, h - 1.0f);
+        return;
     }
     if (!down) Label(graphics, settings.slots[slot].label, font, Gdiplus::Color(190, 7, 12, 18),
         x + 3.0f, y + 1.0f, w - 6.0f, h - 1.0f);
@@ -468,8 +529,13 @@ void DrawController(Gdiplus::Graphics& graphics, const Settings& settings,
         if (amount > 0.0f) {
             const auto saved = graphics.Save();
             graphics.SetClip(&trigger, Gdiplus::CombineModeIntersect);
-            Gdiplus::SolidBrush fill(Accent(settings, 220, 15));
-            graphics.FillRectangle(&fill, x, 9.0f, 65.0f * amount, 18.0f);
+            if (settings.style == OverlayStyle::Gradient) {
+                graphics.SetClip(Gdiplus::RectF(x, 9.0f, 65.0f * amount, 18.0f), Gdiplus::CombineModeIntersect);
+                Surface(graphics, trigger, settings, true, Gdiplus::RectF(x, 9.0f, 65.0f, 18.0f));
+            } else {
+                Gdiplus::SolidBrush fill(Accent(settings, 220, 15));
+                graphics.FillRectangle(&fill, x, 9.0f, 65.0f * amount, 18.0f);
+            }
             graphics.Restore(saved);
         }
         Stroke(graphics, trigger, settings, amount > 0.0f, 1.25f, 2.7f, true);
@@ -555,6 +621,115 @@ void DrawController(Gdiplus::Graphics& graphics, const Settings& settings,
     if (!state.connected) ControllerText(graphics, settings, L"No controller", smallFont, false,
         Gdiplus::RectF(195.0f, 177.0f, 120.0f, 20.0f));
 }
+void DrawDevice(Gdiplus::Graphics& graphics, const Settings& settings,
+                const std::array<bool, InputCount>& pressed, const ControllerState& controller) {
+    Gdiplus::FontFamily family(L"Segoe UI");
+    Gdiplus::Font letter(&family, 15.5f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+    Gdiplus::Font modifier(&family, 12.5f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+    if (settings.device == OverlayDevice::Controller) {
+        DrawController(graphics, settings, controller);
+    } else {
+        for (size_t row = 0; row < 3; ++row) {
+            const float y = 8.0f + static_cast<float>(row) * 41.0f;
+            const float firstWidth = 55.0f + static_cast<float>(row) * 10.0f;
+            const float width = 60.0f - static_cast<float>(row) * 2.0f;
+            Key(graphics, settings, pressed, row * 6, modifier, 12.0f, y, firstWidth, 34.0f);
+            for (size_t col = 1; col < 6; ++col) {
+                const float x = 18.0f + firstWidth + static_cast<float>(col - 1) * (width + 6.0f);
+                Key(graphics, settings, pressed, row * 6 + col, letter, x, y, width, 34.0f);
+            }
+        }
+        Key(graphics, settings, pressed, 18, modifier, 12.0f, 131.0f, settings.isoLayout ? 58.0f : 104.0f, 34.0f);
+        if (settings.isoLayout) Key(graphics, settings, pressed, 19, letter, 76.0f, 131.0f, 40.0f, 34.0f);
+        for (size_t col = 0; col < 4; ++col) {
+            Key(graphics, settings, pressed, 20 + col, letter,
+                122.0f + static_cast<float>(col) * 70.0f, 131.0f, 64.0f, 34.0f);
+        }
+        Key(graphics, settings, pressed, 24, modifier, 12.0f, 172.0f, 60.0f, 34.0f);
+        Key(graphics, settings, pressed, 25, modifier, 78.0f, 172.0f, 48.0f, 34.0f);
+        Key(graphics, settings, pressed, 26, modifier, 132.0f, 172.0f, 52.0f, 34.0f);
+        Key(graphics, settings, pressed, 27, modifier, 190.0f, 172.0f, 207.0f, 34.0f);
+        const auto keyboardTransform = graphics.Save();
+        const bool pearl = settings.style == OverlayStyle::Pearl || settings.style == OverlayStyle::Gradient;
+        const float mouseScale = pearl ? 0.8475f : 0.75f;
+        Gdiplus::Matrix mouseTransform(mouseScale, 0.0f, 0.0f, mouseScale,
+            pearl ? 53.7425f : 93.25f, pearl ? -3.175f : 9.5f);
+        graphics.MultiplyTransform(&mouseTransform);
+        DrawMouse(graphics, settings, pressed);
+        graphics.Restore(keyboardTransform);
+    }
+}
+
+}
+
+void DrawOverlayPreview(HDC dc, const RECT& bounds, const Settings& settings, bool pressed, bool lightBackground) {
+    const int width = bounds.right - bounds.left, height = bounds.bottom - bounds.top;
+    if (!dc || width <= 0 || height <= 0) return;
+    Gdiplus::Graphics scene(dc);
+    scene.SetClip(Gdiplus::Rect(bounds.left, bounds.top, width, height), Gdiplus::CombineModeIntersect);
+    scene.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+    scene.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHalf);
+    const Gdiplus::RectF panel(static_cast<float>(bounds.left), static_cast<float>(bounds.top),
+        static_cast<float>(width), static_cast<float>(height));
+    Gdiplus::LinearGradientBrush background(panel,
+        lightBackground ? Gdiplus::Color(255, 169, 188, 197) : Gdiplus::Color(255, 32, 47, 64),
+        lightBackground ? Gdiplus::Color(255, 152, 180, 184) : Gdiplus::Color(255, 23, 60, 69),
+        Gdiplus::LinearGradientModeForwardDiagonal);
+    scene.FillRectangle(&background, panel);
+    Gdiplus::Pen grid(lightBackground ? Gdiplus::Color(52, 46, 97, 119) : Gdiplus::Color(43, 129, 165, 181), 1.1f);
+    const float spacing = std::max(38.0f, panel.Width / 9.0f);
+    for (float x = panel.X - panel.Height; x < panel.X + panel.Width + panel.Height; x += spacing) {
+        scene.DrawLine(&grid, x, panel.Y, x - panel.Height * 0.35f, panel.Y + panel.Height);
+        scene.DrawLine(&grid, x, panel.Y + panel.Height, x + panel.Height * 1.8f, panel.Y);
+    }
+    const auto sceneState = scene.Save();
+    scene.TranslateTransform(panel.X + panel.Width * 0.78f, panel.Y + panel.Height * 0.51f);
+    scene.RotateTransform(-17.0f);
+    Gdiplus::Pen ring(lightBackground ? Gdiplus::Color(56, 56, 99, 119) : Gdiplus::Color(43, 151, 189, 203), 1.6f);
+    scene.DrawEllipse(&ring, -panel.Width * 0.30f, -panel.Height * 0.42f, panel.Width * 0.60f, panel.Height * 0.84f);
+    scene.Restore(sceneState);
+    if (width <= 24 || height <= 24) return;
+    const float scale = std::min((panel.Width - 24.0f) / OverlayDesignWidth,
+        (panel.Height - 24.0f) / OverlayDesignHeight);
+    const int surfaceWidth = static_cast<int>(std::ceil(OverlayDesignWidth * scale));
+    const int surfaceHeight = static_cast<int>(std::ceil(OverlayDesignHeight * scale));
+    static thread_local std::vector<BYTE> pixels;
+    const size_t byteCount = static_cast<size_t>(surfaceWidth) * static_cast<size_t>(surfaceHeight) * 4;
+    if (pixels.size() != byteCount) pixels.resize(byteCount);
+    Gdiplus::Bitmap surface(surfaceWidth, surfaceHeight, surfaceWidth * 4, PixelFormat32bppPARGB, pixels.data());
+    {
+        Gdiplus::Graphics graphics(&surface);
+        graphics.Clear(Gdiplus::Color(0, 0, 0, 0));
+        graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+        graphics.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHalf);
+        graphics.SetTextRenderingHint(Gdiplus::TextRenderingHintAntiAliasGridFit);
+        graphics.ScaleTransform(scale, scale);
+        std::array<bool, InputCount> inputs{};
+        if (pressed) for (const size_t slot : {size_t{8}, size_t{18}, size_t{28}, size_t{32}}) {
+            const int input = settings.slots[slot].input;
+            if (input > InputNone && static_cast<size_t>(input) < inputs.size()) inputs[static_cast<size_t>(input)] = true;
+        }
+        ControllerState controller;
+        controller.connected = true;
+        controller.index = 0;
+        if (pressed) {
+            controller.buttons = 0x1141;
+            controller.leftX = 0.5f;
+            controller.leftY = 0.3f;
+            controller.leftTrigger = 0.65f;
+        }
+        DrawDevice(graphics, settings, inputs, controller);
+        graphics.Flush(Gdiplus::FlushIntentionSync);
+    }
+    Gdiplus::ColorMatrix opacity = {{{1, 0, 0, 0, 0}, {0, 1, 0, 0, 0}, {0, 0, 1, 0, 0},
+        {0, 0, 0, std::clamp(settings.opacity, 15, 100) / 100.0f, 0}, {0, 0, 0, 0, 1}}};
+    Gdiplus::ImageAttributes attributes;
+    attributes.SetColorMatrix(&opacity);
+    const Gdiplus::RectF destination(panel.X + (panel.Width - surfaceWidth) * 0.5f,
+        panel.Y + (panel.Height - surfaceHeight) * 0.5f,
+        static_cast<float>(surfaceWidth), static_cast<float>(surfaceHeight));
+    scene.DrawImage(&surface, destination, 0, 0, static_cast<float>(surfaceWidth), static_cast<float>(surfaceHeight),
+        Gdiplus::UnitPixel, &attributes);
 }
 
 bool Overlay::Create(HINSTANCE instance, HWND owner) {
@@ -660,42 +835,9 @@ void Overlay::Render(const Settings& settings, const std::array<bool, InputCount
                 graphics.DrawLine(&guide, x, y, x, y + (y == top ? 10.0f : -10.0f));
             }
         }
-        Gdiplus::FontFamily family(L"Segoe UI");
-        Gdiplus::Font letter(&family, 15.5f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
-        Gdiplus::Font modifier(&family, 12.5f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
-        if (settings.device == OverlayDevice::Controller) {
-            DrawController(graphics, settings, controller);
-        } else {
-            for (size_t row = 0; row < 3; ++row) {
-                const float y = 8.0f + static_cast<float>(row) * 41.0f;
-                const float firstWidth = 55.0f + static_cast<float>(row) * 10.0f;
-                const float width = 60.0f - static_cast<float>(row) * 2.0f;
-                Key(graphics, settings, pressed, row * 6, modifier, 12.0f, y, firstWidth, 34.0f);
-                for (size_t col = 1; col < 6; ++col) {
-                    const float x = 18.0f + firstWidth + static_cast<float>(col - 1) * (width + 6.0f);
-                    Key(graphics, settings, pressed, row * 6 + col, letter, x, y, width, 34.0f);
-                }
-            }
-            Key(graphics, settings, pressed, 18, modifier, 12.0f, 131.0f, settings.isoLayout ? 58.0f : 104.0f, 34.0f);
-            if (settings.isoLayout) Key(graphics, settings, pressed, 19, letter, 76.0f, 131.0f, 40.0f, 34.0f);
-            for (size_t col = 0; col < 4; ++col) {
-                Key(graphics, settings, pressed, 20 + col, letter,
-                    122.0f + static_cast<float>(col) * 70.0f, 131.0f, 64.0f, 34.0f);
-            }
-            Key(graphics, settings, pressed, 24, modifier, 12.0f, 172.0f, 60.0f, 34.0f);
-            Key(graphics, settings, pressed, 25, modifier, 78.0f, 172.0f, 48.0f, 34.0f);
-            Key(graphics, settings, pressed, 26, modifier, 132.0f, 172.0f, 52.0f, 34.0f);
-            Key(graphics, settings, pressed, 27, modifier, 190.0f, 172.0f, 207.0f, 34.0f);
-            const auto keyboardTransform = graphics.Save();
-            const bool pearl = settings.style == OverlayStyle::Pearl;
-            const float mouseScale = pearl ? 0.8475f : 0.75f;
-            Gdiplus::Matrix mouseTransform(mouseScale, 0.0f, 0.0f, mouseScale,
-                pearl ? 53.7425f : 93.25f, pearl ? -3.175f : 9.5f);
-            graphics.MultiplyTransform(&mouseTransform);
-            DrawMouse(graphics, settings, pressed);
-            graphics.Restore(keyboardTransform);
-        }
+        DrawDevice(graphics, settings, pressed, controller);
         if (editing_) {
+            Gdiplus::FontFamily family(L"Segoe UI");
             Gdiplus::Font hint(&family, 11.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
             Label(graphics, L"DRAG", hint, Gdiplus::Color(190, 7, 12, 18), 406.0f, 199.0f, 90.0f, 18.0f);
             Label(graphics, L"DRAG", hint, Gdiplus::Color(235, 255, 255, 255), 406.0f, 198.0f, 90.0f, 18.0f);

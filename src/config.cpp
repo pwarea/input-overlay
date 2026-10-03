@@ -167,7 +167,12 @@ void NormalizeSettings(Settings& settings) {
     settings.y = std::clamp(settings.y, 0, 32767);
     settings.scale = std::clamp(settings.scale, 10, 200);
     settings.opacity = std::clamp(settings.opacity, 15, 100);
+    settings.gradientFillOpacity = std::clamp(settings.gradientFillOpacity, 4, 45);
     settings.accent &= 0x00ffffff;
+    settings.backgroundStart &= 0x00ffffff;
+    settings.backgroundEnd &= 0x00ffffff;
+    if (static_cast<int>(settings.colorTheme) < 0 || static_cast<int>(settings.colorTheme) >= ColorThemeCount)
+        settings.colorTheme = ColorTheme::Original;
     if (static_cast<int>(settings.style) < 0 || static_cast<int>(settings.style) >= OverlayStyleCount)
         settings.style = OverlayStyle::Outline;
     if (settings.device != OverlayDevice::KeyboardMouse && settings.device != OverlayDevice::Controller)
@@ -234,6 +239,15 @@ bool LoadSettings(const std::wstring& file, Settings& settings) {
         int number = 0;
         const bool numeric = ParseInt(value, number);
         if (section == L"General") {
+            if (key == L"gradientFillOpacity") {
+                settings.gradientFillOpacity = numeric ? std::clamp(number, 4, 45) : 16;
+                continue;
+            }
+            if (key == L"colorTheme") {
+                settings.colorTheme = numeric && number >= 0 && number < ColorThemeCount
+                    ? static_cast<ColorTheme>(number) : ColorTheme::Original;
+                continue;
+            }
             if (key == L"style") {
                 settings.style = numeric && number >= 0 && number < OverlayStyleCount
                     ? static_cast<OverlayStyle>(number) : OverlayStyle::Outline;
@@ -266,6 +280,8 @@ bool LoadSettings(const std::wstring& file, Settings& settings) {
             else if (key == L"scale") settings.scale = number;
             else if (key == L"opacity") settings.opacity = number;
             else if (key == L"accent" && number >= 0 && number <= 0xffffff) settings.accent = static_cast<COLORREF>(number);
+            else if (key == L"backgroundStart" && number >= 0 && number <= 0xffffff) settings.backgroundStart = static_cast<COLORREF>(number);
+            else if (key == L"backgroundEnd" && number >= 0 && number <= 0xffffff) settings.backgroundEnd = static_cast<COLORREF>(number);
             else if (key == L"enabled" && (number == 0 || number == 1)) settings.enabled = number != 0;
             else if (key == L"startMinimized" && (number == 0 || number == 1)) settings.startMinimized = number != 0;
             else if (key == L"autoCheckUpdates" && (number == 0 || number == 1)) settings.autoCheckUpdates = number != 0;
@@ -301,6 +317,9 @@ bool SaveSettings(const std::wstring& file, const Settings& settings) {
     output << L"[General]\r\nversion=1\r\nx=" << clean.x << L"\r\ny=" << clean.y << L"\r\nscale=" << clean.scale
         << L"\r\nopacity=" << clean.opacity << L"\r\naccent=" << clean.accent << L"\r\nenabled=" << clean.enabled
         << L"\r\nstyle=" << static_cast<int>(clean.style)
+        << L"\r\ncolorTheme=" << static_cast<int>(clean.colorTheme)
+        << L"\r\ngradientFillOpacity=" << clean.gradientFillOpacity
+        << L"\r\nbackgroundStart=" << clean.backgroundStart << L"\r\nbackgroundEnd=" << clean.backgroundEnd
         << L"\r\ndevice=" << static_cast<int>(clean.device)
         << L"\r\ncontrollerLayout=" << static_cast<int>(clean.controllerLayout)
         << L"\r\ncontrollerIndex=" << clean.controllerIndex << L"\r\ncontrollerDeadzone=" << clean.controllerDeadzone

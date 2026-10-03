@@ -1,4 +1,5 @@
 #include "app.hpp"
+#include "colors.hpp"
 #include "geometry.hpp"
 #include <algorithm>
 #include <climits>
@@ -204,7 +205,8 @@ void TestPersistence(const TemporaryDirectory& temp) {
 void TestStyles(const TemporaryDirectory& temp) {
     const auto file = temp.File(L"styles.ini");
     const input_overlay::OverlayStyle styles[] = {input_overlay::OverlayStyle::Outline, input_overlay::OverlayStyle::Neon,
-        input_overlay::OverlayStyle::Glass, input_overlay::OverlayStyle::Circuit, input_overlay::OverlayStyle::Pearl};
+        input_overlay::OverlayStyle::Glass, input_overlay::OverlayStyle::Circuit, input_overlay::OverlayStyle::Pearl,
+        input_overlay::OverlayStyle::Gradient};
     Check(input_overlay::DefaultSettings().style == input_overlay::OverlayStyle::Pearl, "New settings must use Pearl style");
     input_overlay::Settings newInstall;
     Check(!input_overlay::LoadSettings(temp.File(L"new-install.ini"), newInstall) && newInstall.style == input_overlay::OverlayStyle::Pearl,
@@ -228,7 +230,7 @@ void TestStyles(const TemporaryDirectory& temp) {
         Check(input_overlay::LoadSettings(file, settings) && settings.style == input_overlay::OverlayStyle::Outline,
             "Save must persist the safe fallback for invalid styles");
     }
-    for (const char* invalid : {"-1", "5", "2147483648", "invalid", ""}) {
+    for (const char* invalid : {"-1", "6", "2147483648", "invalid", ""}) {
         WriteBytes(file, std::string("[General]\nversion=1\nstyle=2\nstyle=") + invalid + "\nopacity=73\n");
         input_overlay::Settings loaded;
         Check(input_overlay::LoadSettings(file, loaded) && loaded.style == input_overlay::OverlayStyle::Outline && loaded.opacity == 73,
@@ -240,11 +242,159 @@ void TestStyles(const TemporaryDirectory& temp) {
     Check(input_overlay::LoadSettings(file, legacy) && legacy.style == input_overlay::OverlayStyle::Outline &&
         legacy.scale == 75 && legacy.slots[QSlot].label == L"Legacy Q",
         "Version 1 settings without a style must keep existing values and default to Outline");
-    for (int oldId = 0; oldId < 4; ++oldId) {
+    for (int oldId = 0; oldId < 5; ++oldId) {
         WriteBytes(file, "[General]\nversion=1\nstyle=" + std::to_string(oldId) + "\n");
         Check(input_overlay::LoadSettings(file, legacy) && legacy.style == styles[oldId],
-            "Saved pre-Pearl style IDs must retain their original appearance");
+            "Saved pre-Gradient style IDs must retain their original appearance");
     }
+}
+
+void TestColorSettings(const TemporaryDirectory& temp) {
+    const auto file = temp.File(L"colors.ini");
+    const auto defaults = input_overlay::DefaultSettings();
+    Check(defaults.colorTheme == input_overlay::ColorTheme::Original,
+        "New settings must preserve the original color appearance");
+    Check(defaults.gradientFillOpacity == 16 && defaults.backgroundStart == RGB(255, 178, 91) &&
+        defaults.backgroundEnd == RGB(192, 121, 242), "Gradient defaults must match the approved Sunset colors and fill");
+    auto saved = defaults;
+    saved.enabled = false;
+    saved.onlySelectedApps = true;
+    saved.applications = {temp.File(L"Absent Game\\game.exe")};
+    saved.style = input_overlay::OverlayStyle::Gradient;
+    saved.hotkeyVk = VK_F8;
+    saved.hotkeyModifiers = MOD_SHIFT;
+    saved.accent = RGB(19, 72, 211);
+    saved.backgroundStart = RGB(0, 121, 255);
+    saved.backgroundEnd = RGB(241, 38, 0);
+    input_overlay::BindInput(saved, SideSlot, 'Q');
+    for (int theme = 0; theme < input_overlay::ColorThemeCount; ++theme) for (const int fill : {4, 16, 45}) {
+        saved.colorTheme = static_cast<input_overlay::ColorTheme>(theme);
+        saved.gradientFillOpacity = fill;
+        Check(input_overlay::SaveSettings(file, saved), "Every color theme must save");
+        input_overlay::Settings restored;
+        Check(input_overlay::LoadSettings(file, restored) && restored.colorTheme == saved.colorTheme &&
+            restored.backgroundStart == saved.backgroundStart && restored.backgroundEnd == saved.backgroundEnd &&
+            restored.accent == saved.accent && restored.gradientFillOpacity == fill,
+            "Theme, fill opacity and custom color channels must round trip exactly");
+        Check(!restored.enabled && restored.onlySelectedApps && restored.applications == saved.applications &&
+            restored.style == saved.style && restored.hotkeyVk == VK_F8 && restored.hotkeyModifiers == MOD_SHIFT &&
+            restored.slots[SideSlot].input == 'Q' && restored.slots[QSlot].input == 0,
+            "Color preferences must preserve restrictions, disabled state, style, hotkey and input bindings");
+    }
+    for (const int invalid : {-1, input_overlay::ColorThemeCount, INT_MIN, INT_MAX}) {
+        auto malformed = saved;
+        malformed.colorTheme = static_cast<input_overlay::ColorTheme>(invalid);
+        malformed.backgroundStart = 0xff123456;
+        malformed.backgroundEnd = 0x809abcde;
+        input_overlay::NormalizeSettings(malformed);
+        Check(malformed.colorTheme == input_overlay::ColorTheme::Original &&
+            malformed.backgroundStart == 0x123456 && malformed.backgroundEnd == 0x9abcde,
+            "Normalization must recover unknown themes and keep only RGB color bits");
+        malformed.colorTheme = static_cast<input_overlay::ColorTheme>(invalid);
+        malformed.backgroundStart |= 0x80000000;
+        Check(input_overlay::SaveSettings(file, malformed) && input_overlay::LoadSettings(file, malformed) &&
+            malformed.colorTheme == input_overlay::ColorTheme::Original && malformed.backgroundStart == 0x123456,
+            "Saving malformed in-memory colors must persist safe normalized values");
+    }
+    for (const char* invalid : {"-1", "6", "2147483648", "invalid", ""}) {
+        WriteBytes(file, std::string("[General]\ncolorTheme=5\ncolorTheme=") + invalid + "\nopacity=73\n");
+        input_overlay::Settings loaded;
+        Check(input_overlay::LoadSettings(file, loaded) && loaded.colorTheme == input_overlay::ColorTheme::Original &&
+            loaded.opacity == 73, "Malformed stored themes must safely restore Original without losing other settings");
+    }
+    for (const char* invalid : {"-1", "16777216", "2147483648", "#ABCDEF", "0x123456", "invalid", ""}) {
+        const std::string entries = std::string("\nbackgroundStart=") + invalid + "\nbackgroundEnd=" + invalid + "\n";
+        WriteBytes(file, "[General]\ncolorTheme=5" + entries);
+        input_overlay::Settings loaded;
+        Check(input_overlay::LoadSettings(file, loaded) && loaded.colorTheme == input_overlay::ColorTheme::Custom &&
+            loaded.backgroundStart == defaults.backgroundStart && loaded.backgroundEnd == defaults.backgroundEnd,
+            "Malformed stored colors must retain their defaults and selected theme");
+        WriteBytes(file, "[General]\nbackgroundStart=0\nbackgroundEnd=16777215" + entries);
+        Check(input_overlay::LoadSettings(file, loaded) && loaded.backgroundStart == RGB(0, 0, 0) &&
+            loaded.backgroundEnd == RGB(255, 255, 255),
+            "Invalid duplicate colors must not replace valid black and white endpoints");
+    }
+    WriteBytes(file, "[General]\nversion=1\nstyle=4\naccent=13781005\nenabled=0\nonlySelectedApps=1\nscale=75\n");
+    saved.colorTheme = input_overlay::ColorTheme::Aurora;
+    Check(input_overlay::LoadSettings(file, saved) && saved.colorTheme == input_overlay::ColorTheme::Original &&
+        saved.backgroundStart == defaults.backgroundStart && saved.backgroundEnd == defaults.backgroundEnd &&
+        saved.style == input_overlay::OverlayStyle::Pearl && saved.accent == 13781005 && !saved.enabled &&
+        saved.onlySelectedApps && saved.scale == 75 && saved.gradientFillOpacity == 16,
+        "Legacy settings must preserve their appearance and application restrictions");
+    for (const int invalid : {INT_MIN, -1, 0, 3, 46, INT_MAX}) {
+        saved.gradientFillOpacity = invalid;
+        input_overlay::NormalizeSettings(saved);
+        const int expected = invalid < 4 ? 4 : 45;
+        Check(saved.gradientFillOpacity == expected, "Gradient fill normalization must clamp to 4 through 45 percent");
+        WriteBytes(file, "[General]\nstyle=5\nonlySelectedApps=1\ngradientFillOpacity=" + std::to_string(invalid) + "\n");
+        Check(input_overlay::LoadSettings(file, saved) && saved.gradientFillOpacity == expected &&
+            saved.style == input_overlay::OverlayStyle::Gradient && saved.onlySelectedApps,
+            "Stored gradient fill must clamp safely without altering the mode or application restriction");
+    }
+    for (const char* invalid : {"2147483648", "-2147483649", "16.5", "16%", "invalid", ""}) {
+        WriteBytes(file, std::string("[General]\nstyle=5\nenabled=0\ngradientFillOpacity=32\ngradientFillOpacity=") + invalid + "\n");
+        Check(input_overlay::LoadSettings(file, saved) && saved.gradientFillOpacity == 16 &&
+            saved.style == input_overlay::OverlayStyle::Gradient && !saved.enabled,
+            "Malformed gradient fill must restore the default without changing the saved overlay state");
+    }
+}
+
+void TestGradientPalettes() {
+    struct Preset { input_overlay::ColorTheme theme; COLORREF start, end; };
+    const Preset presets[] = {
+        {input_overlay::ColorTheme::Original, RGB(255, 178, 91), RGB(192, 121, 242)},
+        {input_overlay::ColorTheme::Sunset, RGB(255, 178, 91), RGB(192, 121, 242)},
+        {input_overlay::ColorTheme::Aurora, RGB(97, 230, 190), RGB(154, 140, 250)},
+        {input_overlay::ColorTheme::Ocean, RGB(88, 223, 237), RGB(98, 137, 242)},
+        {input_overlay::ColorTheme::Rose, RGB(255, 196, 160), RGB(234, 129, 184)},
+        {input_overlay::ColorTheme::Custom, RGB(11, 73, 141), RGB(231, 129, 5)}
+    };
+    auto settings = input_overlay::DefaultSettings();
+    settings.style = input_overlay::OverlayStyle::Gradient;
+    settings.backgroundStart = RGB(11, 73, 141);
+    settings.backgroundEnd = RGB(231, 129, 5);
+    for (const auto& preset : presets) {
+        settings.colorTheme = preset.theme;
+        const auto palette = input_overlay::ThemePalette(settings);
+        Check(palette.start == preset.start && palette.end == preset.end &&
+            palette.middle == input_overlay::MixColor(preset.start, preset.end, 0.5f),
+            "Each gradient preset must use the approved endpoints and their linear midpoint");
+        for (const float point : {-1.0f, 0.0f, 0.25f, 0.5f, 0.75f, 1.0f, 2.0f}) {
+            Check(input_overlay::ThemeColorAt(settings, point) == input_overlay::MixColor(preset.start, preset.end, point),
+                "Gradient samples must interpolate directly between two endpoints and clamp outside their range");
+        }
+        Check(settings.backgroundStart == RGB(11, 73, 141) && settings.backgroundEnd == RGB(231, 129, 5),
+            "Resolving a preset must leave custom color choices intact");
+    }
+}
+
+void TestColorHex() {
+    struct ValidColor { const wchar_t* text; COLORREF value; const wchar_t* formatted; };
+    const ValidColor valid[] = {
+        {L"#000000", RGB(0, 0, 0), L"#000000"}, {L"FFFFFF", RGB(255, 255, 255), L"#FFFFFF"},
+        {L"#ff0012", RGB(255, 0, 18), L"#FF0012"}, {L"aB09cD", RGB(171, 9, 205), L"#AB09CD"}
+    };
+    for (const auto& entry : valid) {
+        COLORREF parsed = RGB(1, 2, 3);
+        Check(input_overlay::ParseColorHex(entry.text, parsed) && parsed == entry.value,
+            "HEX input must accept optional hash and mixed case without reversing RGB channels");
+        Check(input_overlay::ColorHex(parsed) == entry.formatted,
+            "Formatted HEX must use six uppercase RGB digits with a leading hash");
+        COLORREF reparsed = 0;
+        Check(input_overlay::ParseColorHex(input_overlay::ColorHex(parsed), reparsed) && reparsed == parsed,
+            "Formatted HEX must parse back to the exact selected color");
+    }
+    for (const wchar_t* invalid : {L"", L"#", L"#ABC", L"ABCDE", L"ABCDEFG", L"#12345678", L"0x112233",
+        L"#12GG34", L"# 12345", L" 123456", L"123456 ", L"12345\n", L"\uff1112345"}) {
+        COLORREF parsed = RGB(11, 22, 33);
+        Check(!input_overlay::ParseColorHex(invalid, parsed) && parsed == RGB(11, 22, 33),
+            "Malformed HEX must be rejected without overwriting the current color");
+    }
+    COLORREF parsed = RGB(11, 22, 33);
+    Check(!input_overlay::ParseColorHex(std::wstring(L"12\0ABC", 6), parsed) && parsed == RGB(11, 22, 33),
+        "Embedded nulls must not be accepted as HEX color input");
+    Check(input_overlay::ColorHex(0xaa123456) == L"#563412",
+        "HEX formatting must ignore COLORREF reserved bits and use RGB channel order");
 }
 
 void TestStartupState(const TemporaryDirectory& temp) {
@@ -425,6 +575,9 @@ int main() {
         TestGeometry();
         TestPersistence(temp);
         TestStyles(temp);
+        TestColorSettings(temp);
+        TestGradientPalettes();
+        TestColorHex();
         TestStartupState(temp);
         TestControllerSettings(temp);
         TestUpdatePreferences(temp);

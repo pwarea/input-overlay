@@ -1,5 +1,7 @@
 #include "../src/app.hpp"
 #include "../src/geometry.hpp"
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 
 namespace {
@@ -10,11 +12,117 @@ bool Check(bool condition, const char* message) {
     return condition;
 }
 
-bool Exercise(input_overlay::OverlayStyle style, int device, bool allSizes) {
+bool PreviewChecks() {
+    input_overlay::Overlay runtime;
+    if (!Check(runtime.Create(GetModuleHandleW(nullptr), nullptr), "Preview graphics startup failed")) return false;
+    constexpr int width = 612, height = 264;
+    HDC dc = CreateCompatibleDC(nullptr);
+    BITMAPINFO info{};
+    info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth = width;
+    info.bmiHeader.biHeight = -height;
+    info.bmiHeader.biPlanes = 1;
+    info.bmiHeader.biBitCount = 32;
+    info.bmiHeader.biCompression = BI_RGB;
+    void* data = nullptr;
+    HBITMAP bitmap = CreateDIBSection(dc, &info, DIB_RGB_COLORS, &data, nullptr, 0);
+    if (!dc || !bitmap) {
+        if (bitmap) DeleteObject(bitmap);
+        if (dc) DeleteDC(dc);
+        runtime.Destroy();
+        return Check(false, "Preview test surface allocation failed");
+    }
+    HGDIOBJ previous = SelectObject(dc, bitmap);
+    const RECT bounds{0, 0, width, height};
+    auto* pixels = static_cast<std::uint32_t*>(data);
+    input_overlay::Settings settings;
+    settings.opacity = 100;
+    settings.showMouse = false;
+    for (auto& slot : settings.slots) slot.visible = false;
+    settings.slots[8].visible = true;
+    settings.slots[8].input = 'W';
+    const auto draw = [&](bool pressed = false, bool light = false) {
+        input_overlay::DrawOverlayPreview(dc, bounds, settings, pressed, light);
+        GdiFlush();
+        return std::vector<std::uint32_t>(pixels, pixels + width * height);
+    };
+    bool ok = true;
+    for (int device = 0; device < 3; ++device) {
+        settings.device = device == 0 ? input_overlay::OverlayDevice::KeyboardMouse : input_overlay::OverlayDevice::Controller;
+        settings.controllerLayout = device == 2 ? input_overlay::ControllerLayout::PlayStation : input_overlay::ControllerLayout::Xbox;
+        for (int style = 0; style < static_cast<int>(input_overlay::OverlayStyle::Gradient); ++style) {
+            settings.style = static_cast<input_overlay::OverlayStyle>(style);
+            for (const bool pressed : {false, true}) {
+                settings.colorTheme = input_overlay::ColorTheme::Original;
+                settings.gradientFillOpacity = 4;
+                const auto original = draw(pressed);
+                settings.colorTheme = input_overlay::ColorTheme::Custom;
+                settings.backgroundStart = RGB(255, 0, 0);
+                settings.backgroundEnd = RGB(0, 255, 0);
+                settings.gradientFillOpacity = 45;
+                ok = Check(original == draw(pressed), "Gradient settings changed an existing style") && ok;
+            }
+        }
+    }
+    settings.device = input_overlay::OverlayDevice::KeyboardMouse;
+    settings.style = input_overlay::OverlayStyle::Gradient;
+    settings.colorTheme = input_overlay::ColorTheme::Sunset;
+    settings.slots[8].visible = false;
+    const auto scene = draw();
+    settings.slots[8].visible = true;
+    settings.gradientFillOpacity = 4;
+    const auto faint = draw();
+    settings.gradientFillOpacity = 16;
+    const auto normal = draw();
+    settings.gradientFillOpacity = 45;
+    const auto strong = draw();
+    const auto pressed = draw(true);
+    const float scale = std::min((width - 24.0f) / input_overlay::OverlayDesignWidth,
+        (height - 24.0f) / input_overlay::OverlayDesignHeight);
+    const auto index = [scale](float x, float y) {
+        const int left = static_cast<int>((width - std::ceil(input_overlay::OverlayDesignWidth * scale)) * 0.5f + x * scale);
+        const int top = static_cast<int>((height - std::ceil(input_overlay::OverlayDesignHeight * scale)) * 0.5f + y * scale);
+        return static_cast<size_t>(top * width + left);
+    };
+    const size_t interior = index(158.0f, 58.0f), gap = index(144.0f, 60.0f);
+    const auto red = [interior](const std::vector<std::uint32_t>& snapshot) { return (snapshot[interior] >> 16) & 255; };
+    ok = Check(red(scene) < red(faint) && red(faint) < red(normal) && red(normal) < red(strong) && red(strong) < red(pressed),
+        "Gradient fill opacity or pressed response is not visible") && ok;
+    ok = Check(scene[gap] == normal[gap] && scene[0] == normal[0], "Gradient filled a transparent gap") && ok;
+    settings.gradientFillOpacity = 16;
+    settings.accent = RGB(0, 255, 0);
+    ok = Check(normal == draw(), "Pressed accent changed the Gradient palette") && ok;
+    ok = Check(normal == draw(), "Gradient preview changed without an input or setting change") && ok;
+    ok = Check(normal != draw(false, true), "Light preview background has no effect") && ok;
+    settings.opacity = 15;
+    ok = Check(red(draw()) < red(normal), "Preview ignores overall overlay opacity") && ok;
+    const DWORD gdiBefore = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS);
+    const DWORD userBefore = GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS);
+    for (int i = 0; i < 60; ++i) {
+        settings.gradientFillOpacity = 4 + i % 42;
+        input_overlay::DrawOverlayPreview(dc, bounds, settings, i % 2 != 0, i % 3 == 0);
+    }
+    ok = Check(GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS) <= gdiBefore,
+        "Preview repaints leaked GDI resources") && ok;
+    ok = Check(GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS) <= userBefore,
+        "Preview created or leaked windows") && ok;
+    SelectObject(dc, previous);
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+    runtime.Destroy();
+    return ok;
+}
+
+bool Exercise(input_overlay::OverlayStyle style, int device, bool allSizes,
+              input_overlay::ColorTheme colorTheme = input_overlay::ColorTheme::Original) {
     input_overlay::Overlay overlay;
     if (!Check(overlay.Create(GetModuleHandleW(nullptr), nullptr), "Overlay creation failed")) return false;
     input_overlay::Settings settings;
     settings.style = style;
+    settings.colorTheme = colorTheme;
+    settings.backgroundStart = RGB(0, 0, 0);
+    settings.backgroundEnd = RGB(255, 255, 255);
+    settings.gradientFillOpacity = allSizes ? 16 : 45;
     settings.device = device == 0 ? input_overlay::OverlayDevice::KeyboardMouse : input_overlay::OverlayDevice::Controller;
     settings.controllerLayout = device == 2 ? input_overlay::ControllerLayout::PlayStation : input_overlay::ControllerLayout::Xbox;
     settings.x = -75;
@@ -95,6 +203,7 @@ bool Exercise(input_overlay::OverlayStyle style, int device, bool allSizes) {
 
 int main() {
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    if (!PreviewChecks()) return 1;
     for (int device = 0; device < 3; ++device)
         for (int style = 0; style < input_overlay::OverlayStyleCount; ++style)
             if (!Exercise(static_cast<input_overlay::OverlayStyle>(style), device, true)) return 1;
@@ -103,12 +212,13 @@ int main() {
     for (int cycle = 0; cycle < 5; ++cycle)
         for (int device = 0; device < 3; ++device)
             for (int style = 0; style < input_overlay::OverlayStyleCount; ++style)
-                if (!Exercise(static_cast<input_overlay::OverlayStyle>(style), device, false)) return 1;
+                if (!Exercise(static_cast<input_overlay::OverlayStyle>(style), device, false,
+                              static_cast<input_overlay::ColorTheme>(cycle + 1))) return 1;
     const DWORD after = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS);
     const DWORD windowsAfter = GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS);
     if (!Check(after <= before, "GDI objects leaked across renderer lifecycles")) return 1;
     if (!Check(windowsAfter <= windowsBefore, "USER objects leaked across renderer lifecycles")) return 1;
-    std::printf("Overlay smoke passed: %d hidden renders, all styles and 10-200%% sizes, keyboard/mouse and both controller layouts, connected/disconnected/pressed states, input/edit styles, GDI %lu -> %lu, USER %lu -> %lu.\n",
+    std::printf("Overlay smoke passed: %d hidden renders, all styles and color themes, 10-200%% sizes, keyboard/mouse and both controller layouts, connected/disconnected/pressed states, input/edit styles, GDI %lu -> %lu, USER %lu -> %lu.\n",
                 renders, before, after, windowsBefore, windowsAfter);
     return 0;
 }

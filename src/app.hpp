@@ -18,7 +18,7 @@
 #include "updates.hpp"
 
 #ifndef INPUT_OVERLAY_VERSION
-#define INPUT_OVERLAY_VERSION "0.1.1"
+#define INPUT_OVERLAY_VERSION "0.2.0"
 #endif
 #define INPUT_OVERLAY_WIDEN_IMPL(value) L##value
 #define INPUT_OVERLAY_WIDEN(value) INPUT_OVERLAY_WIDEN_IMPL(value)
@@ -40,8 +40,10 @@ constexpr size_t InputCount = 263;
 constexpr size_t KeyboardCount = 28, SlotCount = 35;
 constexpr int OverlayDesignWidth = 510, OverlayDesignHeight = 220;
 constexpr int OverlayBaseWidth = 357, OverlayBaseHeight = 154;
-enum class OverlayStyle { Outline = 0, Neon = 1, Glass = 2, Circuit = 3, Pearl = 4 };
-constexpr int OverlayStyleCount = 5;
+enum class OverlayStyle { Outline = 0, Neon = 1, Glass = 2, Circuit = 3, Pearl = 4, Gradient = 5 };
+constexpr int OverlayStyleCount = 6;
+enum class ColorTheme { Original = 0, Sunset = 1, Aurora = 2, Ocean = 3, Rose = 4, Custom = 5 };
+constexpr int ColorThemeCount = 6;
 enum class OverlayDevice { KeyboardMouse = 0, Controller = 1 };
 enum class ControllerLayout { Xbox = 0, PlayStation = 1 };
 
@@ -54,6 +56,9 @@ struct Settings {
     std::array<Slot, SlotCount> slots;
     int x = 32, y = 32, scale = 100, opacity = 92;
     COLORREF accent = RGB(125, 211, 252);
+    ColorTheme colorTheme = ColorTheme::Original;
+    COLORREF backgroundStart = RGB(255, 178, 91), backgroundEnd = RGB(192, 121, 242);
+    int gradientFillOpacity = 16;
     OverlayStyle style = OverlayStyle::Pearl;
     OverlayDevice device = OverlayDevice::KeyboardMouse;
     ControllerLayout controllerLayout = ControllerLayout::Xbox;
@@ -69,6 +74,7 @@ struct Settings {
 struct WindowInfo { HWND hwnd = nullptr; std::wstring title, path; };
 
 Settings DefaultSettings();
+void DrawOverlayPreview(HDC dc, const RECT& bounds, const Settings& settings, bool pressed, bool lightBackground);
 void NormalizeSettings(Settings& settings);
 bool LoadSettings(const std::wstring& file, Settings& settings);
 bool SaveSettings(const std::wstring& file, const Settings& settings);

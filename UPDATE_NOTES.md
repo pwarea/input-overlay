@@ -1,3 +1,5 @@
-- Fixed the overlay appearing over unrelated applications when position mode was left active with an application filter enabled.
-- Position mode now ends when switching applications, minimizing settings, or leaving the current settings page. Appearance changes keep the selected application filter active.
-- Release titles now show a readable version number.
+- Added Gradient, a separate transparent style with always-visible color, thin gradient edges, and clear pressed inputs.
+- Added Sunset, Aurora, Ocean, and Rose presets with two-color gradient swatches, plus saved custom colors.
+- Added a full-spectrum color picker, editable HEX colors, gradient color swapping, fill opacity, and Reset Gradient.
+- Added a live settings preview with idle and pressed inputs, light and dark backgrounds, and ANSI or ISO layouts.
+- Gradient preferences are saved locally without changing application filters, bindings, overlay position, or visibility.

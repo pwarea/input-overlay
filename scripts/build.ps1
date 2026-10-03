@@ -17,18 +17,22 @@ try {
     $common += '-DINPUT_OVERLAY_VERSION="' + $versionMatch.Groups[1].Value + '"'
     & $Zig rc /Isrc /fo build/app.res src/app.rc
     if ($LASTEXITCODE -ne 0) { throw 'Resource compilation failed.' }
-    & $Zig c++ @common -Wall -Wextra -municode '-Wl,/subsystem:windows' '-Wl,--build-id=none' -s -static src/main.cpp src/config.cpp src/settings.cpp src/overlay.cpp src/injected_input.cpp src/controller.cpp src/updates.cpp src/update_install.cpp build/app.res -luser32 -lgdi32 -lgdiplus -lcomctl32 -lshell32 -ladvapi32 -ldwmapi -lwtsapi32 -luxtheme -lwinhttp -lbcrypt -o $OutputPath
+    & $Zig c++ @common -Wall -Wextra -municode '-Wl,/subsystem:windows' '-Wl,--build-id=none' -s -static src/main.cpp src/config.cpp src/settings.cpp src/color_picker.cpp src/overlay.cpp src/injected_input.cpp src/controller.cpp src/updates.cpp src/update_install.cpp build/app.res -luser32 -lgdi32 -lgdiplus -lcomctl32 -lshell32 -ladvapi32 -ldwmapi -lwtsapi32 -luxtheme -lwinhttp -lbcrypt -o $OutputPath
     if ($LASTEXITCODE -ne 0) { throw 'Application compilation failed.' }
     if ($Test) {
         & $Zig c++ @common tests/core_tests.cpp src/config.cpp -luser32 -ladvapi32 -ldwmapi -o build/core_tests.exe
         if ($LASTEXITCODE -ne 0) { throw 'Test compilation failed.' }
         & './build/core_tests.exe'
         if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
+        & $Zig c++ @common tests/color_picker_tests.cpp -luser32 -lgdi32 -ldwmapi -o build/color_picker_tests.exe
+        if ($LASTEXITCODE -ne 0) { throw 'Color picker test compilation failed.' }
+        & './build/color_picker_tests.exe'
+        if ($LASTEXITCODE -ne 0) { throw 'Color picker tests failed.' }
         & $Zig c++ @common tests/overlay_smoke.cpp src/overlay.cpp -luser32 -lgdi32 -lgdiplus -o build/overlay_smoke.exe
         if ($LASTEXITCODE -ne 0) { throw 'Renderer test compilation failed.' }
         & './build/overlay_smoke.exe'
         if ($LASTEXITCODE -ne 0) { throw 'Renderer tests failed.' }
-        & $Zig c++ @common tests/application_visibility_tests.cpp src/config.cpp src/overlay.cpp src/injected_input.cpp src/controller.cpp src/updates.cpp src/update_install.cpp -luser32 -lgdi32 -lgdiplus -lcomctl32 -lshell32 -ladvapi32 -ldwmapi -lwtsapi32 -luxtheme -lwinhttp -lbcrypt -o build/application_visibility_tests.exe
+        & $Zig c++ @common tests/application_visibility_tests.cpp src/config.cpp src/color_picker.cpp src/overlay.cpp src/injected_input.cpp src/controller.cpp src/updates.cpp src/update_install.cpp -luser32 -lgdi32 -lgdiplus -lcomctl32 -lshell32 -ladvapi32 -ldwmapi -lwtsapi32 -luxtheme -lwinhttp -lbcrypt -o build/application_visibility_tests.exe
         if ($LASTEXITCODE -ne 0) { throw 'Application visibility test compilation failed.' }
         & './build/application_visibility_tests.exe'
         if ($LASTEXITCODE -ne 0) { throw 'Application visibility tests failed.' }
