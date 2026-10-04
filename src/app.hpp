@@ -18,7 +18,7 @@
 #include "updates.hpp"
 
 #ifndef INPUT_OVERLAY_VERSION
-#define INPUT_OVERLAY_VERSION "0.3.1"
+#define INPUT_OVERLAY_VERSION "0.3.2"
 #endif
 #define INPUT_OVERLAY_WIDEN_IMPL(value) L##value
 #define INPUT_OVERLAY_WIDEN(value) INPUT_OVERLAY_WIDEN_IMPL(value)
@@ -66,7 +66,7 @@ struct Settings {
     ControllerLayout controllerLayout = ControllerLayout::Xbox;
     ControllerStyle controllerStyle = ControllerStyle::Frost;
     COLORREF controllerAccent = CLR_INVALID;
-    int controllerIndex = -1, controllerDeadzone = 15;
+    int controllerIndex = -1, controllerDeadzone = 15, controllerScale = 100;
     bool enabled = true, onlySelectedApps = false, showMouse = true;
     bool startMinimized = false;
     bool autoCheckUpdates = true;
@@ -75,6 +75,9 @@ struct Settings {
     UINT hotkeyModifiers = MOD_CONTROL | MOD_ALT, hotkeyVk = VK_F10;
     std::vector<std::wstring> applications;
 };
+inline int EffectiveOverlayScale(const Settings& settings) {
+    return settings.device == OverlayDevice::Controller ? settings.controllerScale : settings.scale;
+}
 struct WindowInfo { HWND hwnd = nullptr; std::wstring title, path; };
 
 Settings DefaultSettings();

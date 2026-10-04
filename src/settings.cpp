@@ -25,7 +25,8 @@ enum ControlId {
     RestrictApps = 400, WindowList, RefreshWindows, AddWindow, AllowedList, RemoveApp, WindowPath,
     HotkeyValue = 500, ModCtrl, ModAlt, ModShift, ModWin, RecordHotkey, Startup, StartMinimized,
     ControllerMode = 600, ControllerLayoutChoice, ControllerIndex, ControllerDeadzone, ControllerDeadzoneValue,
-    ControllerAppearance, ResetControllerStyle, ControllerStyleFirst = 620, ControllerStyleLast = ControllerStyleFirst + ControllerStyleCount - 1,
+    ControllerAppearance, ResetControllerStyle, ControllerScale, ControllerScaleValue, ResetControllerSize,
+    ControllerStyleFirst = 620, ControllerStyleLast = ControllerStyleFirst + ControllerStyleCount - 1,
     AutoCheckUpdates = 700, CheckUpdates, InstallUpdate, UpdateVersion, UpdateMessage, UpdateNotesTitle, UpdateNotes,
     ThemeFirst = 800, ThemeLast = ThemeFirst + ColorThemeCount - 1, BackgroundStart = 820, BackgroundEnd, PressedColor,
     StartHex, EndHex, SwapGradient, GradientFillControl, GradientFillValue, ResetGradient, GradientStrip,
@@ -382,28 +383,35 @@ void SettingsWindow::Build() {
         for (int i = 0; i < ControllerStyleCount; ++i) button(ControllerStyleNames[i], 216 + i * 126, 153, 114, 36, ControllerStyleFirst + i);
         button(L"Colors", 604, 153, 90, 36, ControllerAppearance);
         button(L"Reset style", 704, 153, 90, 36, ResetControllerStyle);
-        add(L"STATIC", L"Controller appearance preview", SS_OWNERDRAW, 216, 207, 578, 198, OverlayPreview);
-        button(L"Idle", 216, 417, 62, 30, PreviewIdle);
-        button(L"Pressed", 286, 417, 80, 30, PreviewPressed);
-        button(L"Dark background", 418, 417, 158, 30, PreviewBackground);
-        text(L"Layout", 598, 422, 51, 22, 0, true, ui.smallFont);
-        HWND layout = add(L"COMBOBOX", L"Controller layout", WS_TABSTOP | CBS_DROPDOWNLIST, 658, 418, 136, 120, ControllerLayoutChoice);
+        add(L"STATIC", L"Controller appearance preview", SS_OWNERDRAW, 216, 201, 578, 164, OverlayPreview);
+        button(L"Idle", 216, 375, 62, 30, PreviewIdle);
+        button(L"Pressed", 286, 375, 80, 30, PreviewPressed);
+        button(L"Dark background", 418, 375, 158, 30, PreviewBackground);
+        text(L"Layout", 598, 380, 51, 22, 0, true, ui.smallFont);
+        HWND layout = add(L"COMBOBOX", L"Controller layout", WS_TABSTOP | CBS_DROPDOWNLIST, 658, 376, 136, 120, ControllerLayoutChoice);
         SendMessageW(layout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Xbox"));
         SendMessageW(layout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"DualSense"));
-        text(L"Input device", 216, 473, 126, 25, 0, false, ui.heading);
+        text(L"Controller size", 216, 428, 188, 25, 0, false, ui.heading);
+        text(L"", 424, 428, 70, 24, ControllerScaleValue, true);
+        button(L"Reset size", 516, 422, 126, 32, ResetControllerSize);
+        button(L"Move overlay", 654, 422, 140, 32, MoveOverlay);
+        HWND scale = add(TRACKBAR_CLASSW, L"Controller size", WS_TABSTOP | TBS_HORZ | TBS_NOTICKS,
+            208, 461, 590, 30, ControllerScale);
+        SendMessageW(scale, TBM_SETRANGE, TRUE, MAKELPARAM(10, 200));
+        SendMessageW(scale, TBM_SETPAGESIZE, 0, 10);
+        text(L"Input device", 216, 514, 126, 25, 0, false, ui.heading);
         HWND controller = add(L"COMBOBOX", L"Controller", WS_TABSTOP | CBS_DROPDOWNLIST,
-            354, 470, 184, 190, ControllerIndex);
+            354, 511, 140, 190, ControllerIndex);
         SendMessageW(controller, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Auto"));
         for (int i = 1; i <= 4; ++i) {
             const std::wstring label = L"Controller " + std::to_wstring(i);
             SendMessageW(controller, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label.c_str()));
         }
-        text(L"Auto uses the first connected XInput controller.", 556, 470, 238, 36, 0, true, ui.smallFont);
-        text(L"Requires XInput compatibility. DualSense changes the appearance only.", 216, 514, 578, 20, 0, true, ui.smallFont);
-        text(L"Stick deadzone", 216, 543, 460, 25, 0, false, ui.heading);
-        text(L"", 724, 543, 70, 24, ControllerDeadzoneValue, true);
+        text(L"Auto uses the first connected XInput controller. DualSense changes the appearance only.", 216, 551, 278, 49, 0, true, ui.smallFont);
+        text(L"Stick deadzone", 516, 514, 194, 25, 0, false, ui.heading);
+        text(L"", 724, 514, 70, 24, ControllerDeadzoneValue, true);
         HWND deadzone = add(TRACKBAR_CLASSW, L"Stick deadzone", WS_TABSTOP | TBS_HORZ | TBS_NOTICKS,
-            208, 575, 590, 30, ControllerDeadzone);
+            508, 548, 290, 30, ControllerDeadzone);
         SendMessageW(deadzone, TBM_SETRANGE, TRUE, MAKELPARAM(0, 40));
         SendMessageW(deadzone, TBM_SETPAGESIZE, 0, 5);
     } else if (page_ == 5) {
@@ -427,9 +435,9 @@ void SettingsWindow::Build() {
         HWND layout = add(L"COMBOBOX", L"Keyboard layout", WS_TABSTOP | CBS_DROPDOWNLIST, 498, 160, 296, 120, Layout);
         SendMessageW(layout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"ANSI"));
         SendMessageW(layout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"ISO"));
-        text(L"Size", 216, 231, 188, 24, 0, false, ui.heading);
+        text(L"Keyboard size", 216, 231, 188, 24, 0, false, ui.heading);
         text(L"", 424, 231, 80, 24, ScaleValue, true);
-        HWND scale = add(TRACKBAR_CLASSW, L"Overlay size", WS_TABSTOP | TBS_HORZ | TBS_NOTICKS, 208, 263, 280, 34, Scale);
+        HWND scale = add(TRACKBAR_CLASSW, L"Keyboard and mouse size", WS_TABSTOP | TBS_HORZ | TBS_NOTICKS, 208, 263, 280, 34, Scale);
         SendMessageW(scale, TBM_SETRANGE, TRUE, MAKELPARAM(10, 200)); SendMessageW(scale, TBM_SETPAGESIZE, 0, 10);
         text(L"Overall opacity", 516, 231, 188, 24, 0, false, ui.heading);
         text(L"", 724, 231, 70, 24, OpacityValue, true);
@@ -440,8 +448,8 @@ void SettingsWindow::Build() {
         button(L"Reset position and size", 406, 379, 212, 38, ResetPosition);
         text(L"Drag the overlay, then select Done moving. Switching to another application ends moving automatically.",
             216, 442, 578, 45, 0, true);
-        text(L"Size and position stay anchored when your display resolution changes. Reset restores 100% size at the bottom-left corner.",
-            216, 505, 578, 51, 0, true, ui.smallFont);
+        text(L"Controller size is saved separately on the Controller page. Position and opacity apply to both views. Reset restores keyboard size to 100% and the shared position to the bottom-left corner.",
+            216, 505, 578, 61, 0, true, ui.smallFont);
     }
     ui.updating = false; UpdateControls(); InvalidateRect(hwnd_, nullptr, TRUE);
 }
@@ -525,6 +533,10 @@ void SettingsWindow::UpdateControls() {
         Check(hwnd_, StartMinimized, settings.startMinimized);
     } else if (page_ == 4) {
         Check(hwnd_, ControllerMode, settings.device == OverlayDevice::Controller);
+        SendDlgItemMessageW(hwnd_, ControllerScale, TBM_SETPOS, TRUE, settings.controllerScale);
+        SetText(hwnd_, ControllerScaleValue, std::to_wstring(settings.controllerScale) + L"%");
+        SetText(hwnd_, MoveOverlay, app_->overlay.Editing() ? L"Done moving" : L"Move overlay");
+        EnableWindow(GetDlgItem(hwnd_, MoveOverlay), settings.device == OverlayDevice::Controller);
         SendDlgItemMessageW(hwnd_, ControllerLayoutChoice, CB_SETCURSEL, static_cast<int>(settings.controllerLayout), 0);
         SendDlgItemMessageW(hwnd_, ControllerIndex, CB_SETCURSEL, settings.controllerIndex + 1, 0);
         SendDlgItemMessageW(hwnd_, ControllerDeadzone, TBM_SETPOS, TRUE, settings.controllerDeadzone);
@@ -609,7 +621,7 @@ void SettingsWindow::Command(int id, int code) {
         app_->Changed(); UpdateControls(); return;
     }
     switch (id) {
-    case OpenLayout: SelectPage(6); return;
+    case OpenLayout: SelectPage(ui.appearanceController ? 4 : 6); return;
     case AppearanceDevice: {
         if (code != CBN_SELCHANGE) return;
         const LRESULT selected = SendDlgItemMessageW(hwnd_, AppearanceDevice, CB_GETCURSEL, 0, 0);
@@ -703,12 +715,18 @@ void SettingsWindow::Command(int id, int code) {
         ui.previewIso = settings.isoLayout; app_->Changed();
         break;
     case MoveOverlay:
+        if (page_ == 4 && settings.device != OverlayDevice::Controller) return;
         ui.status.clear();
         app_->EditPosition(!app_->overlay.Editing());
         UpdateControls(); break;
     case ResetPosition:
         settings.x = settings.y = 32; settings.anchorRight = false; settings.anchorBottom = true;
-        settings.monitor.clear(); settings.scale = 100; ui.status = L"Position and size reset to the bottom-left corner of your primary display.";
+        settings.monitor.clear(); settings.scale = 100; ui.status = L"Keyboard size reset to 100%; position reset to the bottom-left corner.";
+        app_->Changed(); break;
+    case ResetControllerSize:
+        if (code != BN_CLICKED) return;
+        settings.controllerScale = 100;
+        ui.status = L"Controller size reset to 100%.";
         app_->Changed(); break;
     case SlotList:
         if (code != LBN_SELCHANGE) return;
@@ -790,12 +808,15 @@ void SettingsWindow::Command(int id, int code) {
         settings.startMinimized = Checked(hwnd_, StartMinimized);
         ui.status = settings.startMinimized ? L"Next launch will open in the system tray." : L"Next launch will open Settings.";
         app_->Changed(); break;
-    case ControllerMode:
+    case ControllerMode: {
         if (code != BN_CLICKED) return;
-        settings.device = Checked(hwnd_, ControllerMode) ? OverlayDevice::Controller : OverlayDevice::KeyboardMouse;
+        const OverlayDevice device = Checked(hwnd_, ControllerMode) ? OverlayDevice::Controller : OverlayDevice::KeyboardMouse;
+        if (app_->overlay.Editing()) app_->EditPosition(false);
+        settings.device = device;
         ui.appearanceController = settings.device == OverlayDevice::Controller;
         ui.status = settings.device == OverlayDevice::Controller ? L"Controller view enabled." : L"Keyboard and mouse view enabled.";
         app_->Changed(); break;
+    }
     case ControllerLayoutChoice: {
         if (code != CBN_SELCHANGE) return;
         const LRESULT selected = SendDlgItemMessageW(hwnd_, ControllerLayoutChoice, CB_GETCURSEL, 0, 0);
@@ -874,14 +895,14 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wParam,
         break;
     case WM_HSCROLL: {
         const int id = GetDlgCtrlID(reinterpret_cast<HWND>(lParam));
-        if (id == Scale || id == Opacity || id == ControllerDeadzone || id == GradientFillControl) {
+        if (id == Scale || id == ControllerScale || id == Opacity || id == ControllerDeadzone || id == GradientFillControl) {
             const int value = static_cast<int>(SendMessageW(reinterpret_cast<HWND>(lParam), TBM_GETPOS, 0, 0));
-            const int valueId = id == Scale ? ScaleValue : id == Opacity ? OpacityValue :
+            const int valueId = id == Scale ? ScaleValue : id == ControllerScale ? ControllerScaleValue : id == Opacity ? OpacityValue :
                 id == GradientFillControl ? GradientFillValue : ControllerDeadzoneValue;
             SetText(hwnd, valueId, std::to_wstring(value) + L"%");
             if (id == GradientFillControl) InvalidateControl(hwnd, OverlayPreview);
             if (LOWORD(wParam) != TB_THUMBTRACK) {
-                int& setting = id == Scale ? self->app_->settings.scale :
+                int& setting = id == Scale ? self->app_->settings.scale : id == ControllerScale ? self->app_->settings.controllerScale :
                     id == Opacity ? self->app_->settings.opacity : id == GradientFillControl ? self->app_->settings.gradientFillOpacity : self->app_->settings.controllerDeadzone;
                 if (setting != value) { setting = value; self->app_->Changed(); }
                 self->UpdateControls();
@@ -891,7 +912,7 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wParam,
     }
     case WM_NOTIFY: {
         const auto* custom = reinterpret_cast<NMCUSTOMDRAW*>(lParam);
-        if (custom->hdr.code == NM_CUSTOMDRAW && (custom->hdr.idFrom == Scale || custom->hdr.idFrom == Opacity || custom->hdr.idFrom == ControllerDeadzone || custom->hdr.idFrom == GradientFillControl)) {
+        if (custom->hdr.code == NM_CUSTOMDRAW && (custom->hdr.idFrom == Scale || custom->hdr.idFrom == ControllerScale || custom->hdr.idFrom == Opacity || custom->hdr.idFrom == ControllerDeadzone || custom->hdr.idFrom == GradientFillControl)) {
             if (custom->dwDrawStage == CDDS_PREPAINT) return CDRF_NOTIFYITEMDRAW;
             if (custom->dwDrawStage == CDDS_ITEMPREPAINT) {
                 if (custom->dwItemSpec == TBCD_CHANNEL) { Fill(custom->hdc, custom->rc, Border); return CDRF_SKIPDEFAULT; }

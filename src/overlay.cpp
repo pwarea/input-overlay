@@ -594,9 +594,10 @@ void Overlay::Render(const Settings& settings, const std::array<bool, InputCount
         SetWindowPos(hwnd_, nullptr, settings.x, settings.y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER);
         GetWindowRect(hwnd_, &window);
     }
-    const float scale = static_cast<float>(std::clamp(settings.scale, 10, 200)) / 100.0f *
+    const int percent = std::clamp(EffectiveOverlayScale(settings), 10, 200);
+    const float scale = static_cast<float>(percent) / 100.0f *
         static_cast<float>(OverlayBaseWidth) / static_cast<float>(OverlayDesignWidth);
-    const SIZE surfaceSize = OverlaySize(settings.scale);
+    const SIZE surfaceSize = OverlaySize(percent);
     const int width = surfaceSize.cx;
     const int height = surfaceSize.cy;
     if (width != width_ || height != height_) {

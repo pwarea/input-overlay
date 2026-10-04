@@ -76,7 +76,7 @@ void TestRemapping() {
 
 void TestNormalization() {
     auto settings = input_overlay::DefaultSettings();
-    settings.x = INT_MIN; settings.y = INT_MAX; settings.scale = -1; settings.opacity = 1000;
+    settings.x = INT_MIN; settings.y = INT_MAX; settings.scale = -1; settings.controllerScale = INT_MAX; settings.opacity = 1000;
     settings.hotkeyVk = VK_RSHIFT; settings.hotkeyModifiers = 0xffffffff;
     settings.slots[1].input = VK_LSHIFT;
     settings.slots[2].input = VK_RSHIFT;
@@ -86,7 +86,7 @@ void TestNormalization() {
     settings.applications = {L"C:\\Games\\game.exe", L"c:/games/GAME.exe", L"game.exe", L"D:\\Other\\app.exe"};
     input_overlay::NormalizeSettings(settings);
     Check(settings.x == 0 && settings.y == 32767, "Anchor margins must be nonnegative and bounded");
-    Check(settings.scale == 10 && settings.opacity == 100, "Visual bounds must clamp");
+    Check(settings.scale == 10 && settings.controllerScale == 200 && settings.opacity == 100, "Visual bounds must clamp independently");
     Check(settings.hotkeyVk == VK_F10 && settings.hotkeyModifiers == (MOD_CONTROL | MOD_ALT), "Invalid shortcut needs safe default");
     Check(settings.slots[1].input == VK_SHIFT && settings.slots[2].input == 0 && settings.slots[ShiftSlot].input == 0, "Duplicate aliases must normalize once");
     Check(settings.slots[3].input == 0, "Invalid input must become unbound");
@@ -156,6 +156,64 @@ void TestGeometry() {
     if (previousDpi) SetThreadDpiAwarenessContext(previousDpi);
     Check(unawareSize.cx == 357 && unawareSize.cy == 154 && awareSize.cx == unawareSize.cx && awareSize.cy == unawareSize.cy,
         "Overlay size must not depend on thread DPI awareness");
+}
+
+void TestControllerScale(const TemporaryDirectory& temp) {
+    const auto file = temp.File(L"controller-scale.ini");
+    auto settings = input_overlay::DefaultSettings();
+    Check(settings.scale == 100 && settings.controllerScale == 100, "Both devices must default to 100 percent");
+    settings.scale = 75;
+    settings.controllerScale = 145;
+    settings.anchorRight = settings.anchorBottom = true;
+    const RECT display{-1920, -200, 0, 880}, resized{-1280, 0, 0, 720};
+    for (const auto device : {input_overlay::OverlayDevice::KeyboardMouse, input_overlay::OverlayDevice::Controller}) {
+        settings.device = device;
+        const int expected = device == input_overlay::OverlayDevice::Controller ? 145 : 75;
+        Check(input_overlay::EffectiveOverlayScale(settings) == expected, "Effective scale must use the active device preference");
+        const auto size = input_overlay::OverlaySize(expected);
+        for (const RECT screen : {display, resized}) {
+            const auto position = input_overlay::AnchoredPosition(settings, screen);
+            Check(screen.right - position.x - size.cx == settings.x && screen.bottom - position.y - size.cy == settings.y,
+                "Resolution changes must preserve active device size and edge margins");
+            auto dragged = settings;
+            input_overlay::AnchorPosition(dragged, screen, position);
+            Check(dragged.anchorRight && dragged.anchorBottom && dragged.x == settings.x && dragged.y == settings.y,
+                "Dragging must calculate anchors from the active device dimensions");
+        }
+        Check(input_overlay::SaveSettings(file, settings), "Independent device sizes must save");
+        input_overlay::Settings loaded;
+        Check(input_overlay::LoadSettings(file, loaded) && loaded.scale == 75 && loaded.controllerScale == 145 &&
+            loaded.device == device && input_overlay::EffectiveOverlayScale(loaded) == expected,
+            "Both device sizes must persist independently of the selected device");
+    }
+    for (const int legacy : {-1, 10, 75, 100, 200, INT_MAX}) {
+        WriteBytes(file, "[General]\nscale=" + std::to_string(legacy) + "\nenabled=0\nonlySelectedApps=1\n");
+        Check(input_overlay::LoadSettings(file, settings) && settings.scale == std::clamp(legacy, 10, 200) &&
+            settings.controllerScale == settings.scale && !settings.enabled && settings.onlySelectedApps,
+            "Legacy shared size must migrate without changing visibility or application filters");
+    }
+    for (const bool reversed : {false, true}) {
+        const std::string values = reversed ? "controllerScale=100\nscale=75\n" : "scale=75\ncontrollerScale=100\n";
+        WriteBytes(file, "[General]\n" + values);
+        Check(input_overlay::LoadSettings(file, settings) && settings.scale == 75 && settings.controllerScale == 100,
+            "Explicit default controller size must suppress migration regardless of entry order");
+    }
+    for (const int value : {INT_MIN, 10, 123, 200, INT_MAX}) {
+        WriteBytes(file, "[General]\nscale=75\ncontrollerScale=" + std::to_string(value) + "\n");
+        Check(input_overlay::LoadSettings(file, settings) && settings.scale == 75 && settings.controllerScale == std::clamp(value, 10, 200),
+            "Controller size must clamp independently when loaded");
+        settings.controllerScale = value;
+        Check(input_overlay::SaveSettings(file, settings) && input_overlay::LoadSettings(file, settings) &&
+            settings.scale == 75 && settings.controllerScale == std::clamp(value, 10, 200),
+            "Controller size must clamp independently when saved");
+    }
+    for (const char* invalid : {"2147483648", "invalid", ""}) {
+        WriteBytes(file, std::string("[General]\nscale=75\ncontrollerScale=145\ncontrollerScale=") + invalid + "\n");
+        Check(input_overlay::LoadSettings(file, settings) && settings.scale == 75 && settings.controllerScale == 100,
+            "Malformed explicit controller size must recover to its own default");
+    }
+    Check(!input_overlay::LoadSettings(temp.File(L"new-device-sizes.ini"), settings) && settings.scale == 100 && settings.controllerScale == 100,
+        "Missing settings must reset both sizes to their defaults");
 }
 
 void TestPersistence(const TemporaryDirectory& temp) {
@@ -748,6 +806,7 @@ int main() {
         TestNormalization();
         TestApplicationMatching();
         TestGeometry();
+        TestControllerScale(temp);
         TestPersistence(temp);
         TestStyles(temp);
         TestColorSettings(temp);

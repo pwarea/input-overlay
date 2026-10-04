@@ -23,10 +23,10 @@ struct Layout {
 inline const Layout& GetLayout(bool ds) {
     static const Layout xbox{{122.0f, 110.0f}, {317.0f, 190.0f}, {183.0f, 192.0f},
         {383.0f, 74.0f}, {417.0f, 109.0f}, {383.0f, 147.0f}, {348.0f, 110.0f},
-        {218.0f, 110.0f}, {290.0f, 110.0f}, 40.5f, 18.0f, 41.0f};
+        {218.0f, 110.0f}, {290.0f, 110.0f}, 37.0f, 18.0f, 41.0f};
     static const Layout dualSense{{174.0f, 170.0f}, {330.0f, 170.0f}, {101.0f, 103.0f},
         {401.0f, 69.0f}, {436.0f, 104.0f}, {401.0f, 140.0f}, {366.0f, 104.0f},
-        {141.0f, 49.0f}, {362.0f, 49.0f}, 42.0f, 18.0f, 41.0f};
+        {141.0f, 49.0f}, {362.0f, 49.0f}, 38.5f, 18.0f, 41.0f};
     return ds ? dualSense : xbox;
 }
 
@@ -125,15 +125,19 @@ inline void Shoulder(Gdiplus::GraphicsPath& path, bool ds, int side, bool trigge
     } else if (ds) {
         path.AddBezier(69.0f, 44.0f, 73.0f, 35.0f, 108.0f, 24.0f, 144.0f, 21.0f);
         path.AddBezier(144.0f, 21.0f, 149.0f, 20.0f, 151.0f, 25.0f, 152.0f, 34.0f);
-        path.AddBezier(152.0f, 34.0f, 124.0f, 34.0f, 93.0f, 38.0f, 69.0f, 44.0f);
+        path.AddBezier(152.0f, 34.0f, 153.0f, 38.0f, 147.0f, 38.0f, 137.0f, 38.0f);
+        path.AddBezier(137.0f, 38.0f, 116.0f, 39.0f, 94.0f, 49.0f, 76.0f, 54.0f);
+        path.AddBezier(76.0f, 54.0f, 70.0f, 56.0f, 66.0f, 50.0f, 69.0f, 44.0f);
     } else if (trigger) {
         path.AddBezier(84.0f, 43.0f, 84.0f, 25.0f, 111.0f, 14.0f, 149.0f, 10.0f);
         path.AddBezier(149.0f, 10.0f, 160.0f, 8.0f, 158.0f, 20.0f, 173.0f, 27.0f);
         path.AddBezier(173.0f, 27.0f, 141.0f, 27.0f, 107.0f, 32.0f, 84.0f, 43.0f);
     } else {
-        path.AddBezier(78.0f, 49.0f, 93.0f, 35.0f, 130.0f, 24.0f, 167.0f, 25.0f);
-        path.AddBezier(167.0f, 25.0f, 177.0f, 25.0f, 184.0f, 28.0f, 192.0f, 31.0f);
-        path.AddBezier(192.0f, 31.0f, 145.0f, 29.0f, 110.0f, 36.0f, 78.0f, 49.0f);
+        path.AddBezier(77.0f, 51.0f, 88.0f, 37.0f, 126.0f, 25.0f, 167.0f, 25.0f);
+        path.AddBezier(167.0f, 25.0f, 179.0f, 25.0f, 187.0f, 28.0f, 193.0f, 32.0f);
+        path.AddBezier(193.0f, 32.0f, 194.0f, 38.0f, 190.0f, 43.0f, 181.0f, 44.0f);
+        path.AddBezier(181.0f, 44.0f, 142.0f, 42.0f, 104.0f, 46.0f, 80.0f, 55.0f);
+        path.AddBezier(80.0f, 55.0f, 77.0f, 55.0f, 76.0f, 54.0f, 77.0f, 51.0f);
     }
     path.CloseFigure();
     if (side != 0) {

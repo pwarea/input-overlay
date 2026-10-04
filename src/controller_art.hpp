@@ -159,12 +159,13 @@ inline void Well(Graphics& g, PointF center, float r, const Paint& look) {
         g.FillPath(&prism, &band);
     } else g.FillPath(&bevel, &band);
     GradientStroke(g, outer, look, 1.0f, 185);
-    SolidBrush dark(Ink(look == Look::Air ? 12 : 66, 3, 10, 21));
+    SolidBrush dark(Ink(look == Look::Air ? 12 : 40, 3, 9, 17));
     g.FillPath(&dark, &inner);
+    FillGlass(g, inner, look, RectF(center.X-r+5, center.Y-r+5, (r-5)*2, (r-5)*2), 40);
     Stroke(g, inner, Ink(look == Look::Air ? 55 : 165, 4, 10, 18), 1.3f);
     GraphicsPath glint;
     glint.AddArc(center.X-r+2, center.Y-r+2, (r-2)*2, (r-2)*2, 191, 150);
-    Stroke(g, glint, Ink(look == Look::Air ? 155 : 232, 248, 253, 255), .9f);
+    GradientStroke(g, glint, look, .9f, look == Look::Air ? 155 : 220);
 }
 
 inline void Stick(Graphics& g, PointF center, float r, const Paint& look, bool pressed = false, float dx = 0, float dy = 0) {
@@ -175,17 +176,14 @@ inline void Stick(Graphics& g, PointF center, float r, const Paint& look, bool p
     cap.AddEllipse(center.X-capR,center.Y-capR,capR*2,capR*2);
     inset.AddEllipse(center.X-capR+4.5f,center.Y-capR+4.5f,(capR-4.5f)*2,(capR-4.5f)*2);
     Stroke(g, cap, Ink(look == Look::Air ? 25 : 82, 2, 6, 13), 3);
-    LinearGradientBrush material(RectF(center.X-capR,center.Y-capR,capR*2,capR*2),
-        Ink(look == Look::Air ? 8 : 98, 49, 68, 94), Ink(look == Look::Air ? 4 : 90, 18, 31, 50), LinearGradientModeVertical);
-    g.FillPath(&material, &cap);
-    if (pressed) FillGlass(g, cap, look, RectF(center.X-capR,center.Y-capR,capR*2,capR*2), 100, true);
+    FillGlass(g, cap, look, RectF(center.X-capR,center.Y-capR,capR*2,capR*2), 120, pressed);
     GradientStroke(g, cap, look, 1.25f, 215);
     Stroke(g, inset, Ink(look == Look::Air ? 24 : 65, 8, 17, 31), 1.2f);
     GraphicsPath topArc, bottomArc;
     topArc.AddArc(center.X-capR+5,center.Y-capR+5,(capR-5)*2,(capR-5)*2,200,128);
     bottomArc.AddArc(center.X-capR+1.4f,center.Y-capR+1.4f,(capR-1.4f)*2,(capR-1.4f)*2,29,115);
-    Stroke(g, topArc, Ink(205, 219, 237, 255), .85f);
-    Stroke(g, bottomArc, Ink(65, 221, 242, 255), .9f);
+    GradientStroke(g, topArc, look, .85f, 205);
+    GradientStroke(g, bottomArc, look, .9f, 75);
 }
 
 inline void Dpad(Graphics& g, PointF p, float r, const Paint& look, bool ps, std::uint16_t buttons = 0) {
@@ -267,30 +265,42 @@ inline PointF StickOffset(float x, float y, float radius) {
     return PointF(x * radius * .23f, y * radius * .23f);
 }
 
+inline void ShoulderControl(Graphics& g, const Paint& look, bool ps, int side, bool trigger, float amount) {
+    GraphicsPath path;
+    geometry::Shoulder(path, ps, side, trigger);
+    RectF box;
+    path.GetBounds(&box);
+    FillGlass(g, path, look, box, trigger ? 100 : 80);
+    LensEdge(g, path, look, trigger ? .9f : .8f);
+    amount = Axis(amount, 0.0f);
+    if (amount <= 0.0f) return;
+    const auto saved = g.Save();
+    if (amount < 1.0f) {
+        const float width = box.Width * amount + 5.0f;
+        g.SetClip(RectF(side ? box.GetRight() - box.Width * amount : box.X - 5.0f,
+            box.Y - 5.0f, width, box.Height + 10.0f), CombineModeIntersect);
+    }
+    Stroke(g, path, Ink(205, 3, 8, 16), 5.0f);
+    if (look == Look::Prism) {
+        GradientStroke(g, path, look, 8.0f, 30);
+        LinearGradientBrush active(PointF(0, 0), PointF(530, 380), Warm(look, 245), Violet(look, 235));
+        g.FillPath(&active, &path);
+    } else {
+        Stroke(g, path, Active(look, 30), 8.0f);
+        const COLORREF highlight = MixColor(look.accent, RGB(250, 255, 255), look == Look::Air ? .12f : .30f);
+        LinearGradientBrush active(box, Ink(245, GetRValue(highlight), GetGValue(highlight), GetBValue(highlight)),
+            Active(look, 230), LinearGradientModeVertical);
+        g.FillPath(&active, &path);
+    }
+    Stroke(g, path, Ink(250, 241, 253, 255), 1.65f);
+    g.Restore(saved);
+}
+
 inline void DrawArtwork(Graphics& g, const Settings& settings, const ControllerState& source) {
     const Paint look(settings);
     const bool ps = settings.controllerLayout == ControllerLayout::PlayStation;
     const ControllerState input = source.connected ? source : ControllerState{};
     const auto down = [&input](std::uint16_t mask) { return (input.buttons & mask) != 0; };
-    for(int side=0;side<2;++side) {
-        GraphicsPath path;
-        geometry::Shoulder(path,ps,side,true);
-        RectF box; path.GetBounds(&box);
-        const float amount = Axis(side == 0 ? input.leftTrigger : input.rightTrigger, 0.0f);
-        if (amount <= 0.0f || amount >= 1.0f) FillGlass(g,path,look,box,100,amount >= 1.0f);
-        else {
-            const float split = box.X + box.Width * amount;
-            const auto idleState = g.Save();
-            g.SetClip(RectF(split, box.Y - 1.0f, box.GetRight() - split + 1.0f, box.Height + 2.0f), CombineModeIntersect);
-            FillGlass(g,path,look,box,100,false);
-            g.Restore(idleState);
-            const auto activeState = g.Save();
-            g.SetClip(RectF(box.X - 1.0f, box.Y - 1.0f, split - box.X + 1.0f, box.Height + 2.0f), CombineModeIntersect);
-            FillGlass(g,path,look,box,100,true);
-            g.Restore(activeState);
-        }
-        LensEdge(g,path,look,.9f);
-    }
     GraphicsPath shell, inside, band(FillModeAlternate), grip, opposite;
     geometry::Shell(shell,ps);
     geometry::Shell(inside,ps);
@@ -361,11 +371,8 @@ inline void DrawArtwork(Graphics& g, const Settings& settings, const ControllerS
         GlassButton(g,pill,RectF(238,198,24,6),look,false);
     }
     for(int side=0;side<2;++side) {
-        GraphicsPath path;
-        geometry::Shoulder(path,ps,side,false);
-        RectF box;path.GetBounds(&box);
-        FillGlass(g,path,look,box,80,down(side == 0 ? 0x0100 : 0x0200));
-        LensEdge(g,path,look,.8f);
+        ShoulderControl(g, look, ps, side, true, side ? input.rightTrigger : input.leftTrigger);
+        ShoulderControl(g, look, ps, side, false, down(side ? 0x0200 : 0x0100) ? 1.0f : 0.0f);
     }
     const auto layout=geometry::GetLayout(ps);
     const auto leftOffset = StickOffset(input.leftX, input.leftY, layout.stickR);

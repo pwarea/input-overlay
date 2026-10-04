@@ -166,6 +166,7 @@ void NormalizeSettings(Settings& settings) {
     settings.x = std::clamp(settings.x, 0, 32767);
     settings.y = std::clamp(settings.y, 0, 32767);
     settings.scale = std::clamp(settings.scale, 10, 200);
+    settings.controllerScale = std::clamp(settings.controllerScale, 10, 200);
     settings.opacity = std::clamp(settings.opacity, 15, 100);
     settings.gradientFillOpacity = std::clamp(settings.gradientFillOpacity, 4, 45);
     settings.accent &= 0x00ffffff;
@@ -231,6 +232,7 @@ bool LoadSettings(const std::wstring& file, Settings& settings) {
     std::wistringstream stream(text);
     std::wstring line, section;
     bool hasControllerAccent = false;
+    bool hasControllerScale = false;
     while (std::getline(stream, line)) {
         if (!line.empty() && line.back() == L'\r') line.pop_back();
         if (line.size() > 65536) continue;
@@ -285,6 +287,11 @@ bool LoadSettings(const std::wstring& file, Settings& settings) {
                 settings.controllerDeadzone = numeric ? std::clamp(number, 0, 40) : 15;
                 continue;
             }
+            if (key == L"controllerScale") {
+                hasControllerScale = true;
+                settings.controllerScale = numeric ? std::clamp(number, 10, 200) : 100;
+                continue;
+            }
             if (key == L"monitor") {
                 std::wstring monitor;
                 if (Unescape(value, monitor)) settings.monitor = std::move(monitor);
@@ -324,6 +331,7 @@ bool LoadSettings(const std::wstring& file, Settings& settings) {
     }
     if (!hasControllerAccent && settings.accent != DefaultSettings().accent)
         settings.controllerAccent = settings.accent;
+    if (!hasControllerScale) settings.controllerScale = settings.scale;
     NormalizeSettings(settings);
     return true;
 }
@@ -341,6 +349,7 @@ bool SaveSettings(const std::wstring& file, const Settings& settings) {
         << L"\r\ndevice=" << static_cast<int>(clean.device)
         << L"\r\ncontrollerLayout=" << static_cast<int>(clean.controllerLayout)
         << L"\r\ncontrollerStyle=" << static_cast<int>(clean.controllerStyle)
+        << L"\r\ncontrollerScale=" << clean.controllerScale
         << L"\r\ncontrollerAccent=" << (clean.controllerAccent == CLR_INVALID ? -1 : static_cast<int>(clean.controllerAccent))
         << L"\r\ncontrollerIndex=" << clean.controllerIndex << L"\r\ncontrollerDeadzone=" << clean.controllerDeadzone
         << L"\r\nstartMinimized=" << clean.startMinimized

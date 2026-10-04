@@ -8,14 +8,14 @@ inline SIZE OverlaySize(int scale) {
     return {MulDiv(OverlayBaseWidth, scale, 100), MulDiv(OverlayBaseHeight, scale, 100)};
 }
 inline POINT AnchoredPosition(const Settings& s, const RECT& screen) {
-    const SIZE size = OverlaySize(s.scale);
+    const SIZE size = OverlaySize(EffectiveOverlayScale(s));
     const LONG x = s.anchorRight ? screen.right - size.cx - s.x : screen.left + s.x;
     const LONG y = s.anchorBottom ? screen.bottom - size.cy - s.y : screen.top + s.y;
     return {std::clamp(x, screen.left, std::max(screen.left, screen.right - size.cx)),
             std::clamp(y, screen.top, std::max(screen.top, screen.bottom - size.cy))};
 }
 inline void AnchorPosition(Settings& s, const RECT& screen, POINT position) {
-    const SIZE size = OverlaySize(s.scale);
+    const SIZE size = OverlaySize(EffectiveOverlayScale(s));
     const int left = std::max(0L, position.x - screen.left);
     const int right = std::max(0L, screen.right - position.x - size.cx);
     const int top = std::max(0L, position.y - screen.top);

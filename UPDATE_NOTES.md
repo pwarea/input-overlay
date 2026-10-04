@@ -1,6 +1,4 @@
-- Rebuilt the native Air, Frost, and Prism controller artwork.
-- Corrected Xbox and DualSense proportions, rounded grips, integrated shoulder controls, and touchpad size.
-- Added glass rims, recessed analog sticks, and brighter pressed-button highlights without a solid background panel.
-- Preserved controller proportions at every size instead of stretching the drawings to fit the keyboard canvas.
-- Controller pressed colors now have independent defaults and custom settings, without changing keyboard colors.
-- Existing bindings, application filters, position, visibility, and controller preferences remain saved.
+- Controller size now has its own 10%-200% slider and Reset size button on the Controller page.
+- Keyboard and controller sizes are saved independently, with existing size preferences preserved when updating.
+- Shoulder buttons and analog triggers have clearer pressed fills and contrasting edges on light and dark backgrounds.
+- Slightly smaller analog sticks now use each controller design's glass and gradient colors.

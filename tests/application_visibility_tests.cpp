@@ -284,6 +284,143 @@ void TestControllerAppearance(Harness& harness, HWND allowedWindow) {
     select(AppearanceDevice, 0);
 }
 
+void TestIndependentSizes(Harness& harness, HWND allowedWindow) {
+    auto& app = harness.app;
+    const Settings original = app.settings;
+    const HWND window = app.preferences.Handle();
+    const auto click = [window](int id) { SendMessageW(window, WM_COMMAND, MAKEWPARAM(id, BN_CLICKED), 0); };
+    const auto size = [&]() {
+        RECT rect{};
+        Check(GetWindowRect(app.overlay.Handle(), &rect) != FALSE, "Overlay bounds must be readable");
+        return SIZE{rect.right - rect.left, rect.bottom - rect.top};
+    };
+    const auto expectSize = [&](int scale) {
+        const SIZE actual = size(), expected = OverlaySize(scale);
+        Check(actual.cx == expected.cx && actual.cy == expected.cy, "Live overlay dimensions must follow the active device size");
+    };
+    const auto slide = [window](int id, int value, int notification = TB_ENDTRACK) {
+        HWND control = GetDlgItem(window, id);
+        Check(control != nullptr, "Size slider must exist on its device page");
+        SendMessageW(control, TBM_SETPOS, TRUE, value);
+        SendMessageW(window, WM_HSCROLL, notification, reinterpret_cast<LPARAM>(control));
+    };
+    const auto controllerMode = [&](bool enabled) {
+        SendDlgItemMessageW(window, ControllerMode, BM_SETCHECK, enabled ? BST_CHECKED : BST_UNCHECKED, 0);
+        click(ControllerMode);
+    };
+    app.settings.scale = 135;
+    app.settings.controllerScale = 75;
+    app.settings.enabled = false;
+    app.settings.x = 57; app.settings.y = 41;
+    app.settings.anchorRight = true; app.settings.anchorBottom = true;
+    app.settings.slots[0].label = L"Custom";
+    app.settings.slots[0].input = VK_F8;
+    app.Changed();
+    const Settings positioned = app.settings;
+    Focus(window);
+    click(NavController);
+    Check(GetDlgItem(window, ControllerScale) && GetDlgItem(window, ControllerScaleValue) &&
+        GetDlgItem(window, ResetControllerSize) && GetDlgItem(window, MoveOverlay),
+        "Controller page must expose its own size, percentage, reset, and positioning controls");
+    Check(SendDlgItemMessageW(window, ControllerScale, TBM_GETRANGEMIN, 0, 0) == 10 &&
+        SendDlgItemMessageW(window, ControllerScale, TBM_GETRANGEMAX, 0, 0) == 200 &&
+        Text(window, ControllerScaleValue) == L"75%", "Controller size range and initial percentage must match its saved setting");
+    RECT reset{}, move{}, slider{}, device{}, deadzone{}, status{};
+    GetWindowRect(GetDlgItem(window, ResetControllerSize), &reset);
+    GetWindowRect(GetDlgItem(window, MoveOverlay), &move);
+    GetWindowRect(GetDlgItem(window, ControllerScale), &slider);
+    GetWindowRect(GetDlgItem(window, ControllerIndex), &device);
+    GetWindowRect(GetDlgItem(window, ControllerDeadzone), &deadzone);
+    GetWindowRect(GetDlgItem(window, Status), &status);
+    Check(reset.right < move.left && reset.bottom < slider.top && move.bottom < slider.top &&
+        slider.bottom < device.top && device.right < deadzone.left && deadzone.bottom < status.top,
+        "Controller sizing, device, deadzone, and footer controls must not overlap");
+    Check(!IsWindowEnabled(GetDlgItem(window, MoveOverlay)), "Controller positioning must stay disabled while keyboard view is active");
+    click(MoveOverlay);
+    harness.Expect(false, false, "Controller positioning must not move a keyboard overlay");
+    const std::string beforeDrag = ReadConfiguration(app.configPath);
+    slide(ControllerScale, 145, TB_THUMBTRACK);
+    Check(app.settings.controllerScale == 75 && Text(window, ControllerScaleValue) == L"145%" &&
+        ReadConfiguration(app.configPath) == beforeDrag, "Dragging controller size must update its label without saving partial values");
+    for (const int value : {10, 200, 145}) {
+        slide(ControllerScale, value);
+        Check(app.settings.controllerScale == value && app.settings.scale == 135 && app.settings.device == OverlayDevice::KeyboardMouse,
+            "Controller size must change independently without switching the active device");
+        expectSize(135);
+        harness.Expect(false, false, "Controller size edits must preserve a filtered manually hidden overlay");
+    }
+    controllerMode(true);
+    Check(IsWindowEnabled(GetDlgItem(window, MoveOverlay)), "Controller positioning must be available when controller view is active");
+    expectSize(145);
+    click(NavLayout);
+    slide(Scale, 85);
+    Check(app.settings.scale == 85 && app.settings.controllerScale == 145 && Text(window, ScaleValue) == L"85%",
+        "Keyboard size must retain its own value while controller view is active");
+    expectSize(145);
+    click(NavController);
+    click(ResetControllerSize);
+    Check(app.settings.controllerScale == 100 && app.settings.scale == 85 && Text(window, ControllerScaleValue) == L"100%" &&
+        app.settings.x == positioned.x && app.settings.y == positioned.y && app.settings.monitor == positioned.monitor &&
+        app.settings.anchorRight == positioned.anchorRight && app.settings.anchorBottom == positioned.anchorBottom,
+        "Reset controller size must restore only controller scale while preserving keyboard size and placement");
+    expectSize(100);
+    slide(ControllerScale, 120);
+    controllerMode(false);
+    expectSize(85);
+    controllerMode(true);
+    expectSize(120);
+    Check(!app.settings.enabled && app.settings.onlySelectedApps && app.settings.applications == original.applications &&
+        app.settings.slots[0].input == VK_F8 && app.settings.slots[0].label == L"Custom",
+        "Device switching and sizing must preserve manual hide, application filters, and bindings");
+    click(MoveOverlay);
+    harness.Expect(true, true, "Controller page must open a position preview directly");
+    expectSize(120);
+    controllerMode(false);
+    harness.Expect(false, false, "Switching device must end controller positioning and preserve manual hide");
+    expectSize(85);
+    controllerMode(true);
+    click(MoveOverlay);
+    harness.Expect(true, true, "Controller positioning must work again after switching back");
+    Focus(harness.outside);
+    app.UpdateVisibility();
+    harness.Expect(false, false, "Alt-Tab must end controller positioning and restore manual hide");
+    Focus(window);
+    click(NavLayout);
+    click(ResetPosition);
+    Check(app.settings.scale == 100 && app.settings.controllerScale == 120 && app.settings.x == 32 && app.settings.y == 32 &&
+        !app.settings.anchorRight && app.settings.anchorBottom,
+        "Layout reset must restore keyboard size and shared position without changing controller size");
+    expectSize(120);
+    Settings saved;
+    Check(LoadSettings(app.configPath, saved) && saved.scale == 100 && saved.controllerScale == 120 &&
+        saved.device == OverlayDevice::Controller && !saved.enabled && saved.onlySelectedApps &&
+        saved.applications == original.applications && saved.slots[0].input == VK_F8 && saved.slots[0].label == L"Custom",
+        "Independent sizes, active device, bindings, and visibility preferences must survive reload together");
+    click(NavOverlay);
+    SendDlgItemMessageW(window, AppearanceDevice, CB_SETCURSEL, 1, 0);
+    SendMessageW(window, WM_COMMAND, MAKEWPARAM(AppearanceDevice, CBN_SELCHANGE), 0);
+    click(OpenLayout);
+    Check(GetDlgItem(window, ControllerScale) && !GetDlgItem(window, Scale),
+        "Size and position from controller appearance must open the Controller page");
+    Focus(allowedWindow);
+    app.UpdateVisibility();
+    harness.Expect(false, false, "An allowlisted window must still respect manual hide after resizing");
+    app.Toggle();
+    harness.Expect(true, false, "Showing controller view in an allowlisted window must use its stored size");
+    expectSize(120);
+    Focus(window);
+    app.UpdateVisibility();
+    harness.Expect(false, false, "Switching back to Settings must still apply the application filter");
+    app.settings = original;
+    app.Changed();
+    click(NavOverlay);
+    SendDlgItemMessageW(window, AppearanceDevice, CB_SETCURSEL, 0, 0);
+    SendMessageW(window, WM_COMMAND, MAKEWPARAM(AppearanceDevice, CBN_SELCHANGE), 0);
+    click(OpenLayout);
+    Check(GetDlgItem(window, Scale) && !GetDlgItem(window, ControllerScale),
+        "Size and position from keyboard appearance must open the Layout page");
+}
+
 void RunTests() {
     Desktop desktop;
     TemporaryDirectory directory;
@@ -365,6 +502,7 @@ void RunTests() {
         app.settings.accent == beforeGradient.accent && app.settings.isoLayout == beforeGradient.isoLayout,
         "Gradient editing and reset must preserve application restrictions, visibility, layout, position, size, overall opacity, and pressed accent");
     TestControllerAppearance(harness, allowed.window);
+    TestIndependentSizes(harness, allowed.window);
     SendMessageW(settingsWindow, WM_COMMAND, MAKEWPARAM(NavLayout, BN_CLICKED), 0);
     Check(GetDlgItem(settingsWindow, Scale) && GetDlgItem(settingsWindow, Opacity) && GetDlgItem(settingsWindow, MoveOverlay) &&
         GetDlgItem(settingsWindow, ResetPosition) && GetDlgItem(settingsWindow, Enabled) && GetDlgItem(settingsWindow, Layout),
@@ -427,7 +565,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         RunTests();
-        std::puts("Application visibility passed: isolated desktop, simulated foreground events, real HWND visibility, appearance changes, position preview lifecycle, and manual hide.");
+        std::puts("Application visibility passed: isolated desktop, simulated foreground events, real HWND visibility, appearance changes, independent device sizes, position preview lifecycle, and manual hide.");
         return 0;
     } catch (const std::exception& error) {
         std::fprintf(stderr, "%s (Win32 error %lu)\n", error.what(), GetLastError());

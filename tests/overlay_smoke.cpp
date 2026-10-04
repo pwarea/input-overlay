@@ -143,7 +143,8 @@ bool Exercise(input_overlay::OverlayStyle style, int device, bool allSizes,
     if (allSizes) for (int percent = 10; percent <= 200; ++percent) sizes.push_back(percent);
     else sizes = {10, 50, 100, 200};
     for (const int percent : sizes) {
-        settings.scale = percent;
+        settings.scale = device == 0 ? percent : 210 - percent;
+        settings.controllerScale = device == 0 ? 210 - percent : percent;
         settings.isoLayout = (percent % 2 == 0);
         settings.showMouse = (percent % 3 != 0);
         pressed[static_cast<size_t>(percent) % input_overlay::SlotCount + 1] = true;
@@ -167,7 +168,7 @@ bool Exercise(input_overlay::OverlayStyle style, int device, bool allSizes,
         if (!Check(!IsWindowVisible(overlay.Handle()), "Hidden renderer unexpectedly became visible")) return false;
     }
     if (device != 0) {
-        settings.scale = 100;
+        settings.controllerScale = 100;
         controller = {};
         render();
         controller.connected = true;

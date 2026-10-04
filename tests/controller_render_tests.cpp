@@ -34,6 +34,80 @@ size_t Changed(const Frame& first, const Frame& second) {
     return count;
 }
 
+int CompositeDifference(std::uint32_t first, std::uint32_t second, int background) {
+    int difference = 0;
+    for (const int shift : {0, 8, 16}) {
+        const int firstChannel = static_cast<int>((first >> shift) & 255) +
+            background * (255 - static_cast<int>(first >> 24)) / 255;
+        const int secondChannel = static_cast<int>((second >> shift) & 255) +
+            background * (255 - static_cast<int>(second >> 24)) / 255;
+        difference = std::max(difference, std::abs(firstChannel - secondChannel));
+    }
+    return difference;
+}
+
+void CheckShoulderFeedback(const Settings& settings, const ControllerState& idleState, const Frame& idle) {
+    for (int control = 0; control < 4; ++control) {
+        auto state = idleState;
+        if (control < 2) state.buttons = static_cast<std::uint16_t>(0x0100 << control);
+        else if (control == 2) state.leftTrigger = 1.0f;
+        else state.rightTrigger = 1.0f;
+        const auto active = Draw(settings, state);
+        const bool right = control % 2 != 0;
+        const float regionLeft = 105.0f + (right ? 270.0f : 50.0f) * .60f;
+        const float regionRight = 105.0f + (right ? 450.0f : 230.0f) * .60f;
+        const int left = static_cast<int>(std::floor(regionLeft * Width / OverlayDesignWidth));
+        const int rightEdge = static_cast<int>(std::ceil(regionRight * Width / OverlayDesignWidth));
+        const int bottom = static_cast<int>(std::ceil(47.0f * Height / OverlayDesignHeight));
+        for (int y = 0; y < Height; ++y) for (int x = 0; x < Width; ++x) {
+            if (x >= left && x <= rightEdge && y <= bottom) continue;
+            const size_t index = static_cast<size_t>(y) * Width + x;
+            Check(idle[index] == active[index], "Shoulder input changes a different controller region");
+        }
+        for (const int background : {20, 230}) {
+            size_t legible = 0;
+            for (size_t index = 0; index < idle.size(); ++index)
+                if (CompositeDifference(idle[index], active[index], background) >= 35) ++legible;
+            if (legible < 40) std::fprintf(stderr, "Shoulder contrast: layout=%d style=%d control=%d background=%d pixels=%zu\n",
+                static_cast<int>(settings.controllerLayout), static_cast<int>(settings.controllerStyle), control, background, legible);
+            Check(legible >= 40, "Bumpers and triggers must remain visible on both dark and light backgrounds at default size");
+        }
+    }
+}
+
+Frame DrawStickMaterial(const Settings& settings) {
+    Frame pixels(static_cast<size_t>(Width) * Height);
+    Gdiplus::Bitmap bitmap(Width, Height, Width * 4, PixelFormat32bppPARGB,
+        reinterpret_cast<BYTE*>(pixels.data()));
+    Gdiplus::Graphics graphics(&bitmap);
+    graphics.Clear(Gdiplus::Color(0, 0, 0, 0));
+    graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+    graphics.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHalf);
+    const auto& layout = controller_art::geometry::GetLayout(settings.controllerLayout == ControllerLayout::PlayStation);
+    controller_art::Stick(graphics, Gdiplus::PointF(Width / 2.0f, Height / 2.0f), layout.stickR,
+        controller_art::Paint(settings));
+    graphics.Flush(Gdiplus::FlushIntentionSync);
+    return pixels;
+}
+
+void CheckStickPalette(const Settings& source) {
+    auto settings = source;
+    settings.colorTheme = ColorTheme::Custom;
+    settings.backgroundStart = settings.backgroundEnd = RGB(250, 30, 25);
+    const auto warm = DrawStickMaterial(settings);
+    settings.backgroundStart = settings.backgroundEnd = RGB(25, 40, 250);
+    const auto cool = DrawStickMaterial(settings);
+    int difference = 0;
+    for (int y = Height / 2 - 4; y < Height / 2 + 4; ++y)
+        for (int x = Width / 2 - 4; x < Width / 2 + 4; ++x) {
+            const size_t index = static_cast<size_t>(y) * Width + x;
+            difference += CompositeDifference(warm[index], cool[index], 20);
+        }
+    if (settings.controllerStyle == ControllerStyle::Prism)
+        Check(difference >= 64 * 15, "Prism stick cap material must follow its selected gradient colors");
+    else Check(warm == cool, "Air and Frost stick materials must not inherit Prism gradient colors");
+}
+
 void CheckTransparency(const Frame& frame) {
     size_t transparent = 0, translucent = 0;
     for (const auto pixel : frame) {
@@ -99,6 +173,7 @@ void Run() {
         settings.controllerLayout = static_cast<ControllerLayout>(layout);
         for (int style = 0; style < ControllerStyleCount; ++style) {
             settings.controllerStyle = static_cast<ControllerStyle>(style);
+            settings.controllerAccent = CLR_INVALID;
             settings.colorTheme = ColorTheme::Sunset;
             settings.gradientFillOpacity = 16;
             const auto idle = Draw(settings, state);
@@ -107,6 +182,8 @@ void Run() {
             const auto held = Draw(settings, heldState);
             CheckTransparency(idle);
             CheckInputs(settings, state, idle);
+            CheckShoulderFeedback(settings, state, idle);
+            CheckStickPalette(settings);
             for (const auto& other : designs)
                 Check(Changed(idle, other) > 100, "Controller styles and layouts must be visually distinct");
             designs.push_back(idle);
@@ -146,7 +223,7 @@ void Run() {
     const double elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
     Check(GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS) <= before, "Controller drawing leaked GDI handles");
     Check(GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS) <= userBefore, "Controller drawing created or leaked windows");
-    std::printf("Controller render checks passed: six designs, independent inputs, analog fill, transparency, stable pixels, no handle leaks; %.2f ms/frame over 180 offscreen frames.\n", elapsed / 180.0);
+    std::printf("Controller render checks passed: six designs, independent inputs, shoulder contrast on light/dark backgrounds, themed stick materials, analog fill, transparency, stable pixels, no handle leaks; %.2f ms/frame over 180 offscreen frames.\n", elapsed / 180.0);
 }
 }
 
