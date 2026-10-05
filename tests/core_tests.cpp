@@ -499,26 +499,30 @@ void TestStartupState(const TemporaryDirectory& temp) {
 }
 
 void TestControllerSettings(const TemporaryDirectory& temp) {
+    static_assert(static_cast<int>(input_overlay::ControllerLayout::Xbox) == 0 &&
+        static_cast<int>(input_overlay::ControllerLayout::PlayStation) == 1 &&
+        static_cast<int>(input_overlay::ControllerLayout::DualShock4) == 2);
     const auto file = temp.File(L"controller.ini");
     auto settings = input_overlay::DefaultSettings();
     Check(settings.device == input_overlay::OverlayDevice::KeyboardMouse && settings.controllerLayout == input_overlay::ControllerLayout::Xbox &&
         settings.controllerIndex == -1 && settings.controllerDeadzone == 15,
         "Controller support must preserve the keyboard and mouse defaults");
     settings.device = input_overlay::OverlayDevice::Controller;
-    settings.controllerLayout = input_overlay::ControllerLayout::PlayStation;
     settings.enabled = false;
     settings.onlySelectedApps = true;
     settings.scale = 125;
     settings.controllerScale = 80;
     settings.applications = {temp.File(L"Absent Game\\game.exe")};
     input_overlay::BindInput(settings, SideSlot, 'Q');
-    for (int index = -1; index < input_overlay::ControllerSlotCount; ++index) for (const int deadzone : {0, 15, 40}) {
+    for (int layout = 0; layout < input_overlay::ControllerLayoutCount; ++layout)
+        for (int index = -1; index < input_overlay::ControllerSlotCount; ++index) for (const int deadzone : {0, 15, 40}) {
+        settings.controllerLayout = static_cast<input_overlay::ControllerLayout>(layout);
         settings.controllerIndex = index;
         settings.controllerDeadzone = deadzone;
         Check(input_overlay::SaveSettings(file, settings), "Controller settings must save");
         input_overlay::Settings restored;
         Check(input_overlay::LoadSettings(file, restored) && restored.device == input_overlay::OverlayDevice::Controller &&
-            restored.controllerLayout == input_overlay::ControllerLayout::PlayStation && restored.controllerIndex == index &&
+            restored.controllerLayout == settings.controllerLayout && restored.controllerIndex == index &&
             restored.controllerDeadzone == deadzone, "Controller layout, player and deadzone must round trip");
         Check(!restored.enabled && restored.onlySelectedApps && restored.applications == settings.applications &&
             restored.slots[SideSlot].input == 'Q' && restored.slots[QSlot].input == 0 &&
@@ -541,6 +545,16 @@ void TestControllerSettings(const TemporaryDirectory& temp) {
         Check(input_overlay::LoadSettings(file, settings) && !settings.enabled && settings.device == input_overlay::OverlayDevice::KeyboardMouse &&
             settings.controllerLayout == input_overlay::ControllerLayout::Xbox && settings.controllerIndex == -1,
             "Malformed or unsupported controller IDs must use safe defaults without affecting enabled state");
+    }
+    for (const int invalid : {-1, input_overlay::ControllerLayoutCount, INT_MAX}) {
+        settings.controllerLayout = static_cast<input_overlay::ControllerLayout>(invalid);
+        input_overlay::NormalizeSettings(settings);
+        Check(settings.controllerLayout == input_overlay::ControllerLayout::Xbox && !settings.enabled,
+            "Unsupported controller layouts must normalize without enabling a hidden overlay");
+        WriteBytes(file, "[General]\ncontrollerLayout=" + std::to_string(invalid) + "\nenabled=0\nonlySelectedApps=1\n");
+        Check(input_overlay::LoadSettings(file, settings) && settings.controllerLayout == input_overlay::ControllerLayout::Xbox &&
+            !settings.enabled && settings.onlySelectedApps,
+            "Unsupported saved controller layouts must preserve manual hide and application filters");
     }
     for (const char* invalid : {"2147483648", "invalid", ""}) {
         WriteBytes(file, std::string("[General]\ncontrollerDeadzone=25\ncontrollerDeadzone=") + invalid + "\n");
@@ -586,7 +600,8 @@ void TestControllerStyles(const TemporaryDirectory& temp) {
     input_overlay::BindInput(settings, SideSlot, 'Q');
     for (int style = 0; style < input_overlay::ControllerStyleCount; ++style)
         for (int keyboardStyle = 0; keyboardStyle < input_overlay::OverlayStyleCount; ++keyboardStyle)
-            for (const auto layout : {input_overlay::ControllerLayout::Xbox, input_overlay::ControllerLayout::PlayStation}) {
+            for (const auto layout : {input_overlay::ControllerLayout::Xbox, input_overlay::ControllerLayout::PlayStation,
+                input_overlay::ControllerLayout::DualShock4}) {
                 settings.controllerStyle = static_cast<input_overlay::ControllerStyle>(style);
                 settings.style = static_cast<input_overlay::OverlayStyle>(keyboardStyle);
                 settings.controllerLayout = layout;

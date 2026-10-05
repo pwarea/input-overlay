@@ -191,12 +191,20 @@ void TestControllerAppearance(Harness& harness, HWND allowedWindow) {
     Check(app.settings.device == OverlayDevice::KeyboardMouse, "Controller appearance tests must begin in keyboard and mouse mode");
     for (const bool manuallyHidden : {false, true}) {
         if (manuallyHidden) app.Toggle();
-        for (int design = 0; design < ControllerStyleCount; ++design) for (int layout = 0; layout < 2; ++layout) {
+        for (int design = 0; design < ControllerStyleCount; ++design) for (int layout = 0; layout < ControllerLayoutCount; ++layout) {
             click(NavController);
             Check(GetDlgItem(window, OverlayPreview) && GetDlgItem(window, ControllerAppearance) &&
                 GetDlgItem(window, ResetControllerStyle), "Controller page must expose the native preview, Colors and Reset style");
             for (int id = ControllerStyleFirst; id <= ControllerStyleLast; ++id)
                 Check(GetDlgItem(window, id) != nullptr, "Controller page must expose every design");
+            Check(SendDlgItemMessageW(window, ControllerLayoutChoice, CB_GETCOUNT, 0, 0) == ControllerLayoutCount,
+                "Controller page must expose Xbox, DualSense and DualShock 4 layouts");
+            const wchar_t* layoutNames[] = {L"Xbox", L"DualSense", L"DualShock 4"};
+            wchar_t layoutLabel[64]{};
+            Check(SendDlgItemMessageW(window, ControllerLayoutChoice, CB_GETLBTEXTLEN, layout, 0) ==
+                static_cast<LRESULT>(std::wstring(layoutNames[layout]).size()) &&
+                SendDlgItemMessageW(window, ControllerLayoutChoice, CB_GETLBTEXT, layout, reinterpret_cast<LPARAM>(layoutLabel)) != CB_ERR &&
+                std::wstring(layoutLabel) == layoutNames[layout], "Each controller layout must have its correct label");
             click(ControllerStyleFirst + design);
             select(ControllerLayoutChoice, layout);
             Check(static_cast<int>(app.settings.controllerStyle) == design && static_cast<int>(app.settings.controllerLayout) == layout &&
@@ -220,7 +228,10 @@ void TestControllerAppearance(Harness& harness, HWND allowedWindow) {
                 GetDlgItem(window, ControllerStyleFirst) && !GetDlgItem(window, StyleFirst) &&
                 app.settings.device == OverlayDevice::KeyboardMouse && ReadConfiguration(app.configPath) == beforeColors,
                 "Colors must open the controller appearance editor without activating controller mode or saving preferences");
-            select(PreviewLayout, 1 - layout);
+            Check(SendDlgItemMessageW(window, PreviewLayout, CB_GETCOUNT, 0, 0) == ControllerLayoutCount &&
+                SendDlgItemMessageW(window, PreviewLayout, CB_GETCURSEL, 0, 0) == layout,
+                "The appearance preview must restore every controller layout including DualShock 4");
+            select(PreviewLayout, (layout + 1) % ControllerLayoutCount);
             click(PreviewPressed);
             click(PreviewBackground);
             click(PreviewIdle);
@@ -290,7 +301,7 @@ void TestControllerInputSelection(Harness& harness) {
     const HWND window = app.preferences.Handle();
     const auto click = [window](int id) { SendMessageW(window, WM_COMMAND, MAKEWPARAM(id, BN_CLICKED), 0); };
     app.settings.device = OverlayDevice::Controller;
-    app.settings.controllerLayout = ControllerLayout::PlayStation;
+    app.settings.controllerLayout = ControllerLayout::DualShock4;
     app.settings.controllerStyle = ControllerStyle::Prism;
     app.settings.scale = 135;
     app.settings.controllerScale = 75;

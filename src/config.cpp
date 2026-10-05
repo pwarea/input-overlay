@@ -180,7 +180,7 @@ void NormalizeSettings(Settings& settings) {
         settings.style = OverlayStyle::Outline;
     if (settings.device != OverlayDevice::KeyboardMouse && settings.device != OverlayDevice::Controller)
         settings.device = OverlayDevice::KeyboardMouse;
-    if (settings.controllerLayout != ControllerLayout::Xbox && settings.controllerLayout != ControllerLayout::PlayStation)
+    if (static_cast<int>(settings.controllerLayout) < 0 || static_cast<int>(settings.controllerLayout) >= ControllerLayoutCount)
         settings.controllerLayout = ControllerLayout::Xbox;
     if (static_cast<int>(settings.controllerStyle) < 0 || static_cast<int>(settings.controllerStyle) >= ControllerStyleCount)
         settings.controllerStyle = ControllerStyle::Frost;
@@ -265,7 +265,8 @@ bool LoadSettings(const std::wstring& file, Settings& settings) {
                 continue;
             }
             if (key == L"controllerLayout") {
-                settings.controllerLayout = numeric && number == 1 ? ControllerLayout::PlayStation : ControllerLayout::Xbox;
+                settings.controllerLayout = numeric && number >= 0 && number < ControllerLayoutCount
+                    ? static_cast<ControllerLayout>(number) : ControllerLayout::Xbox;
                 continue;
             }
             if (key == L"controllerStyle") {

@@ -18,7 +18,7 @@
 #include "updates.hpp"
 
 #ifndef INPUT_OVERLAY_VERSION
-#define INPUT_OVERLAY_VERSION "0.4.0"
+#define INPUT_OVERLAY_VERSION "0.4.1"
 #endif
 #define INPUT_OVERLAY_WIDEN_IMPL(value) L##value
 #define INPUT_OVERLAY_WIDEN(value) INPUT_OVERLAY_WIDEN_IMPL(value)
@@ -45,7 +45,8 @@ constexpr int OverlayStyleCount = 6;
 enum class ColorTheme { Original = 0, Sunset = 1, Aurora = 2, Ocean = 3, Rose = 4, Custom = 5 };
 constexpr int ColorThemeCount = 6;
 enum class OverlayDevice { KeyboardMouse = 0, Controller = 1 };
-enum class ControllerLayout { Xbox = 0, PlayStation = 1 };
+enum class ControllerLayout { Xbox = 0, PlayStation = 1, DualShock4 = 2 };
+constexpr int ControllerLayoutCount = 3;
 enum class ControllerStyle { Air = 0, Frost = 1, Prism = 2 };
 constexpr int ControllerStyleCount = 3;
 

@@ -47,9 +47,9 @@ bool PreviewChecks() {
         return std::vector<std::uint32_t>(pixels, pixels + width * height);
     };
     bool ok = true;
-    for (int device = 0; device < 3; ++device) {
+    for (int device = 0; device <= input_overlay::ControllerLayoutCount; ++device) {
         settings.device = device == 0 ? input_overlay::OverlayDevice::KeyboardMouse : input_overlay::OverlayDevice::Controller;
-        settings.controllerLayout = device == 2 ? input_overlay::ControllerLayout::PlayStation : input_overlay::ControllerLayout::Xbox;
+        settings.controllerLayout = device > 0 ? static_cast<input_overlay::ControllerLayout>(device - 1) : input_overlay::ControllerLayout::Xbox;
         for (int style = 0; style < static_cast<int>(input_overlay::OverlayStyle::Gradient); ++style) {
             settings.style = static_cast<input_overlay::OverlayStyle>(style);
             for (const bool pressed : {false, true}) {
@@ -126,7 +126,7 @@ bool Exercise(input_overlay::OverlayStyle style, int device, bool allSizes,
     settings.backgroundEnd = RGB(255, 255, 255);
     settings.gradientFillOpacity = allSizes ? 16 : 45;
     settings.device = device == 0 ? input_overlay::OverlayDevice::KeyboardMouse : input_overlay::OverlayDevice::Controller;
-    settings.controllerLayout = device == 2 ? input_overlay::ControllerLayout::PlayStation : input_overlay::ControllerLayout::Xbox;
+    settings.controllerLayout = device > 0 ? static_cast<input_overlay::ControllerLayout>(device - 1) : input_overlay::ControllerLayout::Xbox;
     settings.x = -75;
     settings.y = 40;
     for (size_t i = 0; i < settings.slots.size(); ++i) {
@@ -209,14 +209,14 @@ int main() {
     if (!PreviewChecks()) return 1;
     for (int style = 0; style < input_overlay::OverlayStyleCount; ++style)
         if (!Exercise(static_cast<input_overlay::OverlayStyle>(style), 0, true)) return 1;
-    for (int device = 1; device < 3; ++device)
+    for (int device = 1; device <= input_overlay::ControllerLayoutCount; ++device)
         for (int style = 0; style < input_overlay::ControllerStyleCount; ++style)
             if (!Exercise(input_overlay::OverlayStyle::Pearl, device, true,
                           input_overlay::ColorTheme::Sunset, static_cast<input_overlay::ControllerStyle>(style))) return 1;
     const DWORD before = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS);
     const DWORD windowsBefore = GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS);
     for (int cycle = 0; cycle < 5; ++cycle)
-        for (int device = 0; device < 3; ++device)
+        for (int device = 0; device <= input_overlay::ControllerLayoutCount; ++device)
             for (int style = 0; style < (device == 0 ? input_overlay::OverlayStyleCount : input_overlay::ControllerStyleCount); ++style)
                 if (!Exercise(device == 0 ? static_cast<input_overlay::OverlayStyle>(style) : input_overlay::OverlayStyle::Pearl,
                               device, false, static_cast<input_overlay::ColorTheme>(cycle + 1),
@@ -225,7 +225,7 @@ int main() {
     const DWORD windowsAfter = GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS);
     if (!Check(after <= before, "GDI objects leaked across renderer lifecycles")) return 1;
     if (!Check(windowsAfter <= windowsBefore, "USER objects leaked across renderer lifecycles")) return 1;
-    std::printf("Overlay smoke passed: %d hidden renders, all styles and color themes, 10-200%% sizes, keyboard/mouse and both controller layouts, connected/disconnected/pressed states, input/edit styles, GDI %lu -> %lu, USER %lu -> %lu.\n",
+    std::printf("Overlay smoke passed: %d hidden renders, all styles and color themes, 10-200%% sizes, keyboard/mouse and all three controller layouts, connected/disconnected/pressed states, input/edit styles, GDI %lu -> %lu, USER %lu -> %lu.\n",
                 renders, before, after, windowsBefore, windowsAfter);
     return 0;
 }

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(InputOverlay VERSION 0.4.0 LANGUAGES CXX RC)
+project(InputOverlay VERSION 0.4.1 LANGUAGES CXX RC)
 if(NOT WIN32)
     message(FATAL_ERROR "Input Overlay requires Windows 10 or newer.")
 endif()

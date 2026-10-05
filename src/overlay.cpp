@@ -2,6 +2,7 @@
 #include "geometry.hpp"
 #include "colors.hpp"
 #include "controller_art.hpp"
+#include "dualshock4_art.hpp"
 #include <objidl.h>
 #include <gdiplus.h>
 #include <algorithm>
@@ -426,7 +427,9 @@ void DrawController(Gdiplus::Graphics& graphics, const Settings& settings,
     const auto saved = graphics.Save();
     graphics.TranslateTransform(105.0f, 2.0f);
     graphics.ScaleTransform(0.60f, 0.60f);
-    controller_art::DrawArtwork(graphics, settings, controller);
+    if (settings.controllerLayout == ControllerLayout::DualShock4)
+        dualshock4_art::DrawArtwork(graphics, settings, controller);
+    else controller_art::DrawArtwork(graphics, settings, controller);
     graphics.Restore(saved);
 }
 void DrawDevice(Gdiplus::Graphics& graphics, const Settings& settings,

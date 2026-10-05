@@ -310,6 +310,7 @@ void SettingsWindow::Build() {
         HWND previewLayout = add(L"COMBOBOX", L"Preview layout", WS_TABSTOP | CBS_DROPDOWNLIST, 658, 383, 136, 120, PreviewLayout);
         SendMessageW(previewLayout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(ui.appearanceController ? L"Xbox" : L"ANSI"));
         SendMessageW(previewLayout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(ui.appearanceController ? L"DualSense" : L"ISO"));
+        if (ui.appearanceController) SendMessageW(previewLayout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"DualShock 4"));
         if (GradientAppearance(app_->settings, ui.appearanceController)) {
             text(L"Gradient presets", 216, 431, 276, 25, 0, false, ui.heading);
             text(L"Gradient colors", 512, 431, 144, 25, 0, false, ui.heading);
@@ -391,6 +392,7 @@ void SettingsWindow::Build() {
         HWND layout = add(L"COMBOBOX", L"Controller layout", WS_TABSTOP | CBS_DROPDOWNLIST, 658, 376, 136, 120, ControllerLayoutChoice);
         SendMessageW(layout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Xbox"));
         SendMessageW(layout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"DualSense"));
+        SendMessageW(layout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"DualShock 4"));
         text(L"Controller size", 216, 428, 188, 25, 0, false, ui.heading);
         text(L"", 424, 428, 70, 24, ControllerScaleValue, true);
         button(L"Reset size", 516, 422, 126, 32, ResetControllerSize);
@@ -408,7 +410,7 @@ void SettingsWindow::Build() {
                 L"DualShock 4 " + std::to_wstring(i - XInputSlotCount + 1);
             SendMessageW(controller, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label.c_str()));
         }
-        text(L"Auto uses XInput or native DualShock 4. DualSense changes the appearance only.", 216, 551, 278, 49, 0, true, ui.smallFont);
+        text(L"Auto uses XInput or native DualShock 4. Layout changes the appearance only.", 216, 551, 278, 49, 0, true, ui.smallFont);
         text(L"Stick deadzone", 516, 514, 194, 25, 0, false, ui.heading);
         text(L"", 724, 514, 70, 24, ControllerDeadzoneValue, true);
         HWND deadzone = add(TRACKBAR_CLASSW, L"Stick deadzone", WS_TABSTOP | TBS_HORZ | TBS_NOTICKS,
@@ -646,11 +648,14 @@ void SettingsWindow::Command(int id, int code) {
     case PreviewBackground:
         if (code != BN_CLICKED) return;
         ui.previewLight = !ui.previewLight; UpdateControls(); return;
-    case PreviewLayout:
+    case PreviewLayout: {
         if (code != CBN_SELCHANGE) return;
-        if (ui.appearanceController) ui.previewControllerLayout = static_cast<ControllerLayout>(SendDlgItemMessageW(hwnd_, PreviewLayout, CB_GETCURSEL, 0, 0));
-        else ui.previewIso = SendDlgItemMessageW(hwnd_, PreviewLayout, CB_GETCURSEL, 0, 0) == 1;
+        const LRESULT selected = SendDlgItemMessageW(hwnd_, PreviewLayout, CB_GETCURSEL, 0, 0);
+        if (selected < 0 || selected >= (ui.appearanceController ? ControllerLayoutCount : 2)) return;
+        if (ui.appearanceController) ui.previewControllerLayout = static_cast<ControllerLayout>(selected);
+        else ui.previewIso = selected == 1;
         InvalidateControl(hwnd_, OverlayPreview); return;
+    }
     case StartHex: case EndHex: {
         if (code != EN_CHANGE && code != EN_KILLFOCUS) return;
         if (!GradientAppearance(settings, ui.appearanceController)) return;
@@ -821,7 +826,7 @@ void SettingsWindow::Command(int id, int code) {
     case ControllerLayoutChoice: {
         if (code != CBN_SELCHANGE) return;
         const LRESULT selected = SendDlgItemMessageW(hwnd_, ControllerLayoutChoice, CB_GETCURSEL, 0, 0);
-        if (selected < 0 || selected > 1) return;
+        if (selected < 0 || selected >= ControllerLayoutCount) return;
         settings.controllerLayout = static_cast<ControllerLayout>(selected);
         ui.previewControllerLayout = settings.controllerLayout;
         app_->Changed(); break;

@@ -84,7 +84,8 @@ Frame DrawStickMaterial(const Settings& settings) {
     graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
     graphics.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHalf);
     const auto& layout = controller_art::geometry::GetLayout(settings.controllerLayout == ControllerLayout::PlayStation);
-    controller_art::Stick(graphics, Gdiplus::PointF(Width / 2.0f, Height / 2.0f), layout.stickR,
+    const float radius = settings.controllerLayout == ControllerLayout::DualShock4 ? 36.0f : layout.stickR;
+    controller_art::Stick(graphics, Gdiplus::PointF(Width / 2.0f, Height / 2.0f), radius,
         controller_art::Paint(settings));
     graphics.Flush(Gdiplus::FlushIntentionSync);
     return pixels;
@@ -169,7 +170,7 @@ void Run() {
     state.connected = true;
     state.index = 0;
     std::vector<Frame> designs;
-    for (int layout = 0; layout < 2; ++layout) {
+    for (int layout = 0; layout < ControllerLayoutCount; ++layout) {
         settings.controllerLayout = static_cast<ControllerLayout>(layout);
         for (int style = 0; style < ControllerStyleCount; ++style) {
             settings.controllerStyle = static_cast<ControllerStyle>(style);
@@ -215,7 +216,7 @@ void Run() {
     const auto started = std::chrono::steady_clock::now();
     for (int frame = 0; frame < 180; ++frame) {
         settings.controllerStyle = static_cast<ControllerStyle>(frame % ControllerStyleCount);
-        settings.controllerLayout = static_cast<ControllerLayout>(frame % 2);
+        settings.controllerLayout = static_cast<ControllerLayout>((frame / ControllerStyleCount) % ControllerLayoutCount);
         state.leftX = static_cast<float>(frame % 21 - 10) / 10.0f;
         state.rightTrigger = static_cast<float>(frame % 100) / 100.0f;
         Draw(settings, state);
@@ -223,7 +224,7 @@ void Run() {
     const double elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
     Check(GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS) <= before, "Controller drawing leaked GDI handles");
     Check(GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS) <= userBefore, "Controller drawing created or leaked windows");
-    std::printf("Controller render checks passed: six designs, independent inputs, shoulder contrast on light/dark backgrounds, themed stick materials, analog fill, transparency, stable pixels, no handle leaks; %.2f ms/frame over 180 offscreen frames.\n", elapsed / 180.0);
+    std::printf("Controller render checks passed: nine designs, independent inputs, shoulder contrast on light/dark backgrounds, themed stick materials, analog fill, transparency, stable pixels, no handle leaks; %.2f ms/frame over 180 offscreen frames.\n", elapsed / 180.0);
 }
 }
 

@@ -1,5 +1,4 @@
-- Added direct Sony DualShock 4 input over USB and Bluetooth without requiring an XInput mapper.
-- Auto input selection can now detect DualShock 4 controllers, with four dedicated slots available for manual selection.
-- Added native support for face buttons, D-pad, shoulders, stick clicks, analog sticks, triggers, Share, and Options.
-- Preserved existing Xbox and DualSense appearances, controller sizes, application filters, and saved input selections.
-- Native controller reads run outside the interface thread and stop when the controller overlay is hidden.
+- Added a dedicated DualShock 4 layout with Air, Frost, and Prism styles.
+- Added DualShock 4 to the Controller layout selector and appearance previews.
+- Added transparent PS4 artwork with independent button, shoulder, trigger, and stick feedback.
+- Preserved existing Xbox and DualSense appearances, saved input selections, separate device sizes, application filters, and hidden state.
