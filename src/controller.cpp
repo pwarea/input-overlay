@@ -1,4 +1,5 @@
 #include "controller.hpp"
+#include "dualshock4.hpp"
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -41,7 +42,7 @@ bool ControllerState::operator==(const ControllerState& other) const {
 
 ControllerState NormalizeController(const ControllerRawState& raw, int index, int deadzone) {
     ControllerState result;
-    if (index < 0 || index > 3) return result;
+    if (index < 0 || index >= ControllerSlotCount) return result;
     result.connected = true;
     result.index = index;
     result.buttons = raw.buttons & 0xf3ff;
@@ -52,13 +53,20 @@ ControllerState NormalizeController(const ControllerRawState& raw, int index, in
     return result;
 }
 
-ControllerProvider::ControllerProvider(Reader reader, void* context) : reader_(reader), context_(context) {}
+ControllerProvider::ControllerProvider(Reader reader, void* context, Reader nativeReader, void* nativeContext)
+    : reader_(reader), context_(context), nativeReader_(nativeReader), nativeContext_(nativeContext) {}
 
 ControllerProvider::~ControllerProvider() {
     if (module_) FreeLibrary(static_cast<HMODULE>(module_));
 }
 
 bool ControllerProvider::Read(int index, ControllerRawState& raw) {
+    if (index >= XInputSlotCount) {
+        if (nativeReader_) return nativeReader_(nativeContext_, index - XInputSlotCount, raw);
+        if (reader_) return false;
+        if (!native_) native_ = std::make_unique<DualShock4Provider>();
+        return native_->Read(index - XInputSlotCount, raw);
+    }
     if (reader_) return reader_(context_, index, raw);
     if (!loadAttempted_) {
         loadAttempted_ = true;
@@ -84,8 +92,12 @@ bool ControllerProvider::Read(int index, ControllerRawState& raw) {
     return true;
 }
 
+std::uint64_t ControllerProvider::RetryDelay(int index) const {
+    return index >= XInputSlotCount && native_ && native_->Discovering() ? ActiveInterval : RetryInterval;
+}
+
 ControllerState ControllerProvider::Poll(std::uint64_t now, int index, int deadzone) {
-    if (index < -1 || index > 3) index = -1;
+    if (index < -1 || index >= ControllerSlotCount) index = -1;
     if (selection_ != index) {
         Reset();
         selection_ = index;
@@ -99,18 +111,19 @@ ControllerState ControllerProvider::Poll(std::uint64_t now, int index, int deadz
             nextPollAt_ = now + ActiveInterval;
             return state_;
         }
-        retryAfter_[active] = now + RetryInterval;
+        retryAfter_[active] = now + RetryDelay(active);
         state_ = {};
     }
-    const int first = index < 0 ? 0 : index, last = index < 0 ? 3 : index;
+    const int first = index < 0 ? 0 : index, last = index < 0 ? ControllerSlotCount - 1 : index;
     for (int candidate = first; candidate <= last; ++candidate) {
         if (now < retryAfter_[candidate]) continue;
         if (Read(candidate, raw)) {
             state_ = NormalizeController(raw, candidate, deadzone);
+            if (candidate < XInputSlotCount && native_) native_->Reset();
             nextPollAt_ = now + ActiveInterval;
             return state_;
         }
-        retryAfter_[candidate] = now + RetryInterval;
+        retryAfter_[candidate] = now + RetryDelay(candidate);
     }
     nextPollAt_ = *std::min_element(retryAfter_.begin() + first, retryAfter_.begin() + last + 1);
     return state_;
@@ -122,6 +135,7 @@ unsigned ControllerProvider::NextPollDelay(std::uint64_t now) const {
 }
 
 void ControllerProvider::Reset() {
+    if (native_) native_->Reset();
     state_ = {};
     selection_ = -2;
     retryAfter_.fill(0);

@@ -508,9 +508,11 @@ void TestControllerSettings(const TemporaryDirectory& temp) {
     settings.controllerLayout = input_overlay::ControllerLayout::PlayStation;
     settings.enabled = false;
     settings.onlySelectedApps = true;
+    settings.scale = 125;
+    settings.controllerScale = 80;
     settings.applications = {temp.File(L"Absent Game\\game.exe")};
     input_overlay::BindInput(settings, SideSlot, 'Q');
-    for (const int index : {-1, 0, 1, 2, 3}) for (const int deadzone : {0, 15, 40}) {
+    for (int index = -1; index < input_overlay::ControllerSlotCount; ++index) for (const int deadzone : {0, 15, 40}) {
         settings.controllerIndex = index;
         settings.controllerDeadzone = deadzone;
         Check(input_overlay::SaveSettings(file, settings), "Controller settings must save");
@@ -519,10 +521,11 @@ void TestControllerSettings(const TemporaryDirectory& temp) {
             restored.controllerLayout == input_overlay::ControllerLayout::PlayStation && restored.controllerIndex == index &&
             restored.controllerDeadzone == deadzone, "Controller layout, player and deadzone must round trip");
         Check(!restored.enabled && restored.onlySelectedApps && restored.applications == settings.applications &&
-            restored.slots[SideSlot].input == 'Q' && restored.slots[QSlot].input == 0,
-            "Controller preferences must not erase restrictions, disabled state or keyboard remaps");
+            restored.slots[SideSlot].input == 'Q' && restored.slots[QSlot].input == 0 &&
+            restored.scale == 125 && restored.controllerScale == 80,
+            "Controller preferences must not erase restrictions, disabled state, keyboard remaps or independent sizes");
     }
-    for (const int invalid : {-100, 4, INT_MAX}) {
+    for (const int invalid : {-100, input_overlay::ControllerSlotCount, INT_MAX}) {
         settings.device = static_cast<input_overlay::OverlayDevice>(invalid);
         settings.controllerLayout = static_cast<input_overlay::ControllerLayout>(invalid);
         settings.controllerIndex = invalid;
@@ -532,7 +535,7 @@ void TestControllerSettings(const TemporaryDirectory& temp) {
             settings.controllerIndex == -1 && settings.controllerDeadzone >= 0 && settings.controllerDeadzone <= 40,
             "Invalid in-memory controller settings must normalize safely");
     }
-    for (const char* invalid : {"-100", "4", "2147483648", "invalid", ""}) {
+    for (const char* invalid : {"-100", "8", "2147483648", "invalid", ""}) {
         WriteBytes(file, std::string("[General]\nversion=1\nenabled=0\ndevice=1\ndevice=") + invalid +
             "\ncontrollerLayout=1\ncontrollerLayout=" + invalid + "\ncontrollerIndex=2\ncontrollerIndex=" + invalid + "\n");
         Check(input_overlay::LoadSettings(file, settings) && !settings.enabled && settings.device == input_overlay::OverlayDevice::KeyboardMouse &&

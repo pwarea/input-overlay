@@ -1,4 +1,5 @@
-- Controller size now has its own 10%-200% slider and Reset size button on the Controller page.
-- Keyboard and controller sizes are saved independently, with existing size preferences preserved when updating.
-- Shoulder buttons and analog triggers have clearer pressed fills and contrasting edges on light and dark backgrounds.
-- Slightly smaller analog sticks now use each controller design's glass and gradient colors.
+- Added direct Sony DualShock 4 input over USB and Bluetooth without requiring an XInput mapper.
+- Auto input selection can now detect DualShock 4 controllers, with four dedicated slots available for manual selection.
+- Added native support for face buttons, D-pad, shoulders, stick clicks, analog sticks, triggers, Share, and Options.
+- Preserved existing Xbox and DualSense appearances, controller sizes, application filters, and saved input selections.
+- Native controller reads run outside the interface thread and stop when the controller overlay is hidden.

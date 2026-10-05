@@ -284,6 +284,58 @@ void TestControllerAppearance(Harness& harness, HWND allowedWindow) {
     select(AppearanceDevice, 0);
 }
 
+void TestControllerInputSelection(Harness& harness) {
+    auto& app = harness.app;
+    const Settings original = app.settings;
+    const HWND window = app.preferences.Handle();
+    const auto click = [window](int id) { SendMessageW(window, WM_COMMAND, MAKEWPARAM(id, BN_CLICKED), 0); };
+    app.settings.device = OverlayDevice::Controller;
+    app.settings.controllerLayout = ControllerLayout::PlayStation;
+    app.settings.controllerStyle = ControllerStyle::Prism;
+    app.settings.scale = 135;
+    app.settings.controllerScale = 75;
+    app.settings.enabled = false;
+    app.settings.x = 53;
+    app.settings.y = 47;
+    app.Changed();
+    const Settings unchanged = app.settings;
+    Focus(window);
+    click(NavController);
+    Check(SendDlgItemMessageW(window, ControllerIndex, CB_GETCOUNT, 0, 0) == ControllerSlotCount + 1,
+        "Controller selection must expose Auto, four XInput slots and four native DualShock 4 slots");
+    for (int index = -1; index < ControllerSlotCount; ++index) {
+        const std::wstring expected = index < 0 ? L"Auto" : index < XInputSlotCount ? L"XInput " + std::to_wstring(index + 1) :
+            L"DualShock 4 " + std::to_wstring(index - XInputSlotCount + 1);
+        wchar_t label[64]{};
+        Check(SendDlgItemMessageW(window, ControllerIndex, CB_GETLBTEXTLEN, index + 1, 0) == static_cast<LRESULT>(expected.size()) &&
+            SendDlgItemMessageW(window, ControllerIndex, CB_GETLBTEXT, index + 1, reinterpret_cast<LPARAM>(label)) != CB_ERR &&
+            label == expected, "Controller labels must distinguish XInput and native DualShock 4 slots");
+        Check(SendDlgItemMessageW(window, ControllerIndex, CB_SETCURSEL, index + 1, 0) != CB_ERR,
+            "Every controller input slot must be selectable");
+        SendMessageW(window, WM_COMMAND, MAKEWPARAM(ControllerIndex, CBN_SELCHANGE), 0);
+        Settings saved;
+        Check(app.settings.controllerIndex == index && LoadSettings(app.configPath, saved) && saved.controllerIndex == index,
+            "Controller input selection must persist the original and native slot indices");
+        Check(saved.device == unchanged.device && saved.controllerLayout == unchanged.controllerLayout &&
+            saved.controllerStyle == unchanged.controllerStyle && saved.controllerScale == 75 && saved.scale == 135 &&
+            !saved.enabled && saved.onlySelectedApps == unchanged.onlySelectedApps && saved.applications == unchanged.applications &&
+            saved.x == unchanged.x && saved.y == unchanged.y && saved.monitor == unchanged.monitor,
+            "Selecting native controller input must preserve the appearance, independent sizes, manual hide, filters and position");
+        harness.Expect(false, false, "Controller input selection must not bypass manual hide or application filters");
+        click(NavLayout);
+        click(NavController);
+        Check(SendDlgItemMessageW(window, ControllerIndex, CB_GETCURSEL, 0, 0) == index + 1,
+            "Reopening Controller settings must restore the selected input slot");
+    }
+    SendDlgItemMessageW(window, ControllerIndex, CB_SETCURSEL, ControllerSlotCount + 1, 0);
+    SendMessageW(window, WM_COMMAND, MAKEWPARAM(ControllerIndex, CBN_SELCHANGE), 0);
+    Check(app.settings.controllerIndex == ControllerSlotCount - 1,
+        "An unavailable combo selection must not overwrite a valid native controller slot");
+    app.settings = original;
+    app.Changed();
+    click(NavOverlay);
+}
+
 void TestIndependentSizes(Harness& harness, HWND allowedWindow) {
     auto& app = harness.app;
     const Settings original = app.settings;
@@ -502,6 +554,7 @@ void RunTests() {
         app.settings.accent == beforeGradient.accent && app.settings.isoLayout == beforeGradient.isoLayout,
         "Gradient editing and reset must preserve application restrictions, visibility, layout, position, size, overall opacity, and pressed accent");
     TestControllerAppearance(harness, allowed.window);
+    TestControllerInputSelection(harness);
     TestIndependentSizes(harness, allowed.window);
     SendMessageW(settingsWindow, WM_COMMAND, MAKEWPARAM(NavLayout, BN_CLICKED), 0);
     Check(GetDlgItem(settingsWindow, Scale) && GetDlgItem(settingsWindow, Opacity) && GetDlgItem(settingsWindow, MoveOverlay) &&
@@ -565,7 +618,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         RunTests();
-        std::puts("Application visibility passed: isolated desktop, simulated foreground events, real HWND visibility, appearance changes, independent device sizes, position preview lifecycle, and manual hide.");
+        std::puts("Application visibility passed: isolated desktop, simulated foreground events, real HWND visibility, appearance changes, native controller selection, independent device sizes, position preview lifecycle, and manual hide.");
         return 0;
     } catch (const std::exception& error) {
         std::fprintf(stderr, "%s (Win32 error %lu)\n", error.what(), GetLastError());

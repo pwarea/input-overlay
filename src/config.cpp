@@ -184,7 +184,7 @@ void NormalizeSettings(Settings& settings) {
         settings.controllerLayout = ControllerLayout::Xbox;
     if (static_cast<int>(settings.controllerStyle) < 0 || static_cast<int>(settings.controllerStyle) >= ControllerStyleCount)
         settings.controllerStyle = ControllerStyle::Frost;
-    if (settings.controllerIndex < -1 || settings.controllerIndex > 3) settings.controllerIndex = -1;
+    if (settings.controllerIndex < -1 || settings.controllerIndex >= ControllerSlotCount) settings.controllerIndex = -1;
     settings.controllerDeadzone = std::clamp(settings.controllerDeadzone, 0, 40);
     if (settings.monitor.size() >= CCHDEVICENAME || !ValidUnicode(settings.monitor) ||
         std::any_of(settings.monitor.begin(), settings.monitor.end(), [](wchar_t c) { return c < 32; })) settings.monitor.clear();
@@ -280,7 +280,7 @@ bool LoadSettings(const std::wstring& file, Settings& settings) {
                 continue;
             }
             if (key == L"controllerIndex") {
-                settings.controllerIndex = numeric && number >= -1 && number <= 3 ? number : -1;
+                settings.controllerIndex = numeric && number >= -1 && number < ControllerSlotCount ? number : -1;
                 continue;
             }
             if (key == L"controllerDeadzone") {

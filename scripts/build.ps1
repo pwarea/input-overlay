@@ -17,7 +17,7 @@ try {
     $common += '-DINPUT_OVERLAY_VERSION="' + $versionMatch.Groups[1].Value + '"'
     & $Zig rc /Isrc /fo build/app.res src/app.rc
     if ($LASTEXITCODE -ne 0) { throw 'Resource compilation failed.' }
-    & $Zig c++ @common -Wall -Wextra -municode '-Wl,/subsystem:windows' '-Wl,--build-id=none' -s -static src/main.cpp src/config.cpp src/settings.cpp src/color_picker.cpp src/overlay.cpp src/injected_input.cpp src/controller.cpp src/updates.cpp src/update_install.cpp build/app.res -luser32 -lgdi32 -lgdiplus -lcomctl32 -lshell32 -ladvapi32 -ldwmapi -lwtsapi32 -luxtheme -lwinhttp -lbcrypt -o $OutputPath
+    & $Zig c++ @common -Wall -Wextra -municode '-Wl,/subsystem:windows' '-Wl,--build-id=none' -s -static src/main.cpp src/config.cpp src/settings.cpp src/color_picker.cpp src/overlay.cpp src/injected_input.cpp src/controller.cpp src/dualshock4.cpp src/updates.cpp src/update_install.cpp build/app.res -luser32 -lgdi32 -lgdiplus -lcomctl32 -lshell32 -ladvapi32 -ldwmapi -lwtsapi32 -luxtheme -lwinhttp -lbcrypt -lhid -lsetupapi -o $OutputPath
     if ($LASTEXITCODE -ne 0) { throw 'Application compilation failed.' }
     if ($Test) {
         & $Zig c++ @common tests/core_tests.cpp src/config.cpp -luser32 -ladvapi32 -ldwmapi -o build/core_tests.exe
@@ -36,7 +36,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Controller renderer test compilation failed.' }
         & './build/controller_render_tests.exe'
         if ($LASTEXITCODE -ne 0) { throw 'Controller renderer tests failed.' }
-        & $Zig c++ @common tests/application_visibility_tests.cpp src/config.cpp src/color_picker.cpp src/overlay.cpp src/injected_input.cpp src/controller.cpp src/updates.cpp src/update_install.cpp -luser32 -lgdi32 -lgdiplus -lcomctl32 -lshell32 -ladvapi32 -ldwmapi -lwtsapi32 -luxtheme -lwinhttp -lbcrypt -o build/application_visibility_tests.exe
+        & $Zig c++ @common tests/application_visibility_tests.cpp src/config.cpp src/color_picker.cpp src/overlay.cpp src/injected_input.cpp src/controller.cpp src/dualshock4.cpp src/updates.cpp src/update_install.cpp -luser32 -lgdi32 -lgdiplus -lcomctl32 -lshell32 -ladvapi32 -ldwmapi -lwtsapi32 -luxtheme -lwinhttp -lbcrypt -lhid -lsetupapi -o build/application_visibility_tests.exe
         if ($LASTEXITCODE -ne 0) { throw 'Application visibility test compilation failed.' }
         & './build/application_visibility_tests.exe'
         if ($LASTEXITCODE -ne 0) { throw 'Application visibility tests failed.' }
@@ -44,10 +44,14 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Input worker test compilation failed.' }
         & './build/injected_input_tests.exe'
         if ($LASTEXITCODE -ne 0) { throw 'Input worker tests failed.' }
-        & $Zig c++ @common tests/controller_tests.cpp src/controller.cpp -o build/controller_tests.exe
+        & $Zig c++ @common tests/controller_tests.cpp src/controller.cpp src/dualshock4.cpp -lhid -lsetupapi -o build/controller_tests.exe
         if ($LASTEXITCODE -ne 0) { throw 'Controller test compilation failed.' }
         & './build/controller_tests.exe'
         if ($LASTEXITCODE -ne 0) { throw 'Controller tests failed.' }
+        & $Zig c++ @common tests/dualshock4_tests.cpp src/dualshock4.cpp -lhid -lsetupapi -o build/dualshock4_tests.exe
+        if ($LASTEXITCODE -ne 0) { throw 'DualShock 4 test compilation failed.' }
+        & './build/dualshock4_tests.exe'
+        if ($LASTEXITCODE -ne 0) { throw 'DualShock 4 tests failed.' }
         & $Zig c++ @common tests/update_tests.cpp src/updates.cpp -lwinhttp -lbcrypt -o build/update_tests.exe
         if ($LASTEXITCODE -ne 0) { throw 'Update test compilation failed.' }
         & './build/update_tests.exe'

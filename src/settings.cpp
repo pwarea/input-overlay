@@ -400,14 +400,15 @@ void SettingsWindow::Build() {
         SendMessageW(scale, TBM_SETRANGE, TRUE, MAKELPARAM(10, 200));
         SendMessageW(scale, TBM_SETPAGESIZE, 0, 10);
         text(L"Input device", 216, 514, 126, 25, 0, false, ui.heading);
-        HWND controller = add(L"COMBOBOX", L"Controller", WS_TABSTOP | CBS_DROPDOWNLIST,
+        HWND controller = add(L"COMBOBOX", L"Controller", WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
             354, 511, 140, 190, ControllerIndex);
         SendMessageW(controller, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Auto"));
-        for (int i = 1; i <= 4; ++i) {
-            const std::wstring label = L"Controller " + std::to_wstring(i);
+        for (int i = 0; i < ControllerSlotCount; ++i) {
+            const std::wstring label = i < XInputSlotCount ? L"XInput " + std::to_wstring(i + 1) :
+                L"DualShock 4 " + std::to_wstring(i - XInputSlotCount + 1);
             SendMessageW(controller, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label.c_str()));
         }
-        text(L"Auto uses the first connected XInput controller. DualSense changes the appearance only.", 216, 551, 278, 49, 0, true, ui.smallFont);
+        text(L"Auto uses XInput or native DualShock 4. DualSense changes the appearance only.", 216, 551, 278, 49, 0, true, ui.smallFont);
         text(L"Stick deadzone", 516, 514, 194, 25, 0, false, ui.heading);
         text(L"", 724, 514, 70, 24, ControllerDeadzoneValue, true);
         HWND deadzone = add(TRACKBAR_CLASSW, L"Stick deadzone", WS_TABSTOP | TBS_HORZ | TBS_NOTICKS,
@@ -828,7 +829,7 @@ void SettingsWindow::Command(int id, int code) {
     case ControllerIndex: {
         if (code != CBN_SELCHANGE) return;
         const LRESULT selected = SendDlgItemMessageW(hwnd_, ControllerIndex, CB_GETCURSEL, 0, 0);
-        if (selected < 0 || selected > 4) return;
+        if (selected < 0 || selected > ControllerSlotCount) return;
         settings.controllerIndex = static_cast<int>(selected) - 1;
         app_->Changed(); break;
     }

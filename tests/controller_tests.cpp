@@ -58,7 +58,12 @@ void TestNormalization() {
         "Negative deadzone must safely clamp to zero");
     Check(input_overlay::NormalizeController(raw, 0, 100) == input_overlay::NormalizeController(raw, 0, 40),
         "Oversized deadzone must safely clamp to forty percent");
-    for (const int index : {-2, -1, 4, 100}) {
+    for (int index = input_overlay::XInputSlotCount; index < input_overlay::ControllerSlotCount; ++index) {
+        const auto native = input_overlay::NormalizeController(raw, index, 15);
+        Check(native.connected && native.index == index && native.leftX > 0,
+            "Native controller slots must normalize through the same input pipeline");
+    }
+    for (const int index : {-2, -1, input_overlay::ControllerSlotCount, 100}) {
         Check(input_overlay::NormalizeController(raw, index, 15) == input_overlay::ControllerState{},
             "An invalid physical index must normalize to a fully disconnected state");
     }
@@ -123,6 +128,68 @@ void TestExplicitSelectionAndReset() {
     state = provider.Poll(2119, 99, 15);
     Check(state.connected && state.index == 0, "Invalid configured indices must safely use automatic selection");
 }
+
+void TestCombinedSources() {
+    FakeControllers xinput;
+    FakeControllers native;
+    input_overlay::ControllerProvider provider(FakeControllers::Read, &xinput, FakeControllers::Read, &native);
+    native.connected[1] = true;
+    native.state[1].buttons = 0x4000;
+    native.state[1].leftTrigger = 255;
+    auto state = provider.Poll(0, -1, 15);
+    Check(state.connected && state.index == 5 && state.buttons == 0x4000 && state.leftTrigger == 1 &&
+        xinput.calls == std::array<int, 4>{1, 1, 1, 1} && native.calls == std::array<int, 4>{1, 1, 0, 0},
+        "Automatic selection must fall back from absent XInput players to native DualShock 4 slots");
+    xinput.connected[0] = true;
+    Check(provider.Poll(16, -1, 15) == state && xinput.calls[0] == 1 && native.calls[1] == 2,
+        "An active native slot must remain stable when an XInput device appears");
+    provider.Poll(17, -1, 15);
+    Check(native.calls[1] == 2, "Native inputs must respect the same sixteen-millisecond poll cadence");
+    native.connected[1] = false;
+    state = provider.Poll(2000, -1, 15);
+    Check(state.connected && state.index == 0 && state.buttons == 0 && state.leftTrigger == 0,
+        "A native disconnect must clear held inputs before switching to an available XInput player");
+    native.connected[3] = true;
+    native.state[3].buttons = 0x2000;
+    state = provider.Poll(2001, 7, 15);
+    Check(state.connected && state.index == 7 && state.buttons == 0x2000 && native.calls[3] == 1,
+        "The fourth native slot must be explicitly selectable");
+    const auto xinputCalls = xinput.calls;
+    native.connected[3] = false;
+    Check(provider.Poll(2017, 7, 15) == input_overlay::ControllerState{} && xinput.calls == xinputCalls,
+        "An explicit native disconnect must never switch to an XInput controller");
+    native.connected[3] = true;
+    provider.Poll(4016, 7, 15);
+    Check(native.calls[3] == 2, "A missing native slot must retain its two-second retry backoff");
+    state = provider.Poll(4017, 7, 15);
+    Check(state.connected && state.index == 7 && native.calls[3] == 3,
+        "Native reconnect must occur at the retry boundary");
+    native.state[3].buttons = 0;
+    provider.Reset();
+    state = provider.Poll(4018, 7, 15);
+    Check(state.connected && state.index == 7 && state.buttons == 0,
+        "Reset must immediately replace native state with a fresh read");
+    state = provider.Poll(4019, -1, 15);
+    Check(state.connected && state.index == 0,
+        "A fresh automatic selection must prioritize XInput when both sources are available");
+}
+
+void TestInjectedReadersNeverUseHardware() {
+    FakeControllers fake;
+    input_overlay::ControllerProvider provider(FakeControllers::Read, &fake);
+    for (int index = input_overlay::XInputSlotCount; index < input_overlay::ControllerSlotCount; ++index) {
+        Check(provider.Poll(static_cast<std::uint64_t>(index), index, 15) == input_overlay::ControllerState{},
+            "A legacy injected reader must not enable native HID discovery");
+    }
+    Check(fake.calls == std::array<int, 4>{}, "Native slots must never be sent to the XInput reader callback");
+    FakeControllers native;
+    input_overlay::ControllerProvider combined(FakeControllers::Read, &fake, FakeControllers::Read, &native);
+    combined.Poll(0, -1, 15);
+    Check(fake.calls == std::array<int, 4>{1, 1, 1, 1} && native.calls == std::array<int, 4>{1, 1, 1, 1} &&
+        combined.NextPollDelay(0) == 2000, "All eight absent slots must be scanned once and then back off");
+    combined.Poll(1999, -1, 15);
+    Check(native.calls == std::array<int, 4>{1, 1, 1, 1}, "Native absence must not create a busy polling loop");
+}
 }
 
 int main() {
@@ -130,6 +197,8 @@ int main() {
         TestNormalization();
         TestAutomaticSelectionAndRetry();
         TestExplicitSelectionAndReset();
+        TestCombinedSources();
+        TestInjectedReadersNeverUseHardware();
         std::puts("All controller tests passed.");
         return EXIT_SUCCESS;
     } catch (const std::exception& error) {
