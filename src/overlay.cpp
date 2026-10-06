@@ -471,6 +471,45 @@ void DrawDevice(Gdiplus::Graphics& graphics, const Settings& settings,
     }
 }
 
+void DrawOverlaySurface(Gdiplus::Bitmap& surface, const Settings& settings,
+                        const std::array<bool, InputCount>& pressed,
+                        const ControllerState& controller, bool editing) {
+    const RECT viewport = OverlayViewport(settings);
+    const float scale = static_cast<float>(std::clamp(EffectiveOverlayScale(settings), 10, 200)) / 100.0f *
+        static_cast<float>(OverlayBaseWidth) / static_cast<float>(OverlayDesignWidth);
+    Gdiplus::Graphics graphics(&surface);
+    graphics.Clear(Gdiplus::Color(editing ? 1 : 0, 0, 0, 0));
+    graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+    graphics.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHalf);
+    graphics.SetTextRenderingHint(Gdiplus::TextRenderingHintAntiAliasGridFit);
+    graphics.SetCompositingMode(Gdiplus::CompositingModeSourceOver);
+    graphics.ScaleTransform(scale, scale);
+    if (editing) {
+        Gdiplus::Pen guide(Gdiplus::Color(210, GetRValue(settings.accent),
+            GetGValue(settings.accent), GetBValue(settings.accent)), 1.4f);
+        const bool controllerView = settings.device == OverlayDevice::Controller;
+        const float left = controllerView ? viewport.left / scale + 3.0f : 3.0f;
+        const float top = controllerView ? viewport.top / scale + 3.0f : 3.0f;
+        const float right = controllerView ? viewport.right / scale - 3.0f : OverlayDesignWidth - 3.0f;
+        const float bottom = controllerView ? viewport.bottom / scale - 3.0f : OverlayDesignHeight - 3.0f;
+        for (const float x : {left, right}) for (const float y : {top, bottom}) {
+            graphics.DrawLine(&guide, x, y, x + (x == left ? 10.0f : -10.0f), y);
+            graphics.DrawLine(&guide, x, y, x, y + (y == top ? 10.0f : -10.0f));
+        }
+    }
+    DrawDevice(graphics, settings, pressed, controller);
+    if (editing) {
+        Gdiplus::FontFamily family(L"Segoe UI");
+        Gdiplus::Font hint(&family, 11.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+        const bool controllerView = settings.device == OverlayDevice::Controller;
+        const float x = controllerView ? (viewport.left + viewport.right) / (2.0f * scale) - 45.0f : 406.0f;
+        const float y = controllerView ? viewport.bottom / scale - 22.0f : 198.0f;
+        Label(graphics, L"DRAG", hint, Gdiplus::Color(190, 7, 12, 18), x, y + 1.0f, 90.0f, 18.0f);
+        Label(graphics, L"DRAG", hint, Gdiplus::Color(235, 255, 255, 255), x, y, 90.0f, 18.0f);
+    }
+    graphics.Flush(Gdiplus::FlushIntentionSync);
+}
+
 }
 
 void DrawOverlayPreview(HDC dc, const RECT& bounds, const Settings& settings, bool pressed, bool lightBackground) {
@@ -597,10 +636,8 @@ void Overlay::Render(const Settings& settings, const std::array<bool, InputCount
         SetWindowPos(hwnd_, nullptr, settings.x, settings.y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER);
         GetWindowRect(hwnd_, &window);
     }
-    const int percent = std::clamp(EffectiveOverlayScale(settings), 10, 200);
-    const float scale = static_cast<float>(percent) / 100.0f *
-        static_cast<float>(OverlayBaseWidth) / static_cast<float>(OverlayDesignWidth);
-    const SIZE surfaceSize = OverlaySize(percent);
+    const RECT viewport = OverlayViewport(settings);
+    const SIZE surfaceSize = OverlaySize(EffectiveOverlayScale(settings));
     const int width = surfaceSize.cx;
     const int height = surfaceSize.cy;
     if (width != width_ || height != height_) {
@@ -628,34 +665,10 @@ void Overlay::Render(const Settings& settings, const std::array<bool, InputCount
     }
     {
         Gdiplus::Bitmap surface(width_, height_, width_ * 4, PixelFormat32bppPARGB, static_cast<BYTE*>(pixels_));
-        Gdiplus::Graphics graphics(&surface);
-        graphics.Clear(Gdiplus::Color(editing_ ? 1 : 0, 0, 0, 0));
-        graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
-        graphics.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHalf);
-        graphics.SetTextRenderingHint(Gdiplus::TextRenderingHintAntiAliasGridFit);
-        graphics.SetCompositingMode(Gdiplus::CompositingModeSourceOver);
-        graphics.ScaleTransform(scale, scale);
-        if (editing_) {
-            Gdiplus::Pen guide(Gdiplus::Color(210, GetRValue(settings.accent),
-                GetGValue(settings.accent), GetBValue(settings.accent)), 1.4f);
-            const float left = 3.0f, top = 3.0f;
-            const float right = OverlayDesignWidth - 3.0f, bottom = OverlayDesignHeight - 3.0f;
-            for (const float x : {left, right}) for (const float y : {top, bottom}) {
-                graphics.DrawLine(&guide, x, y, x + (x == left ? 10.0f : -10.0f), y);
-                graphics.DrawLine(&guide, x, y, x, y + (y == top ? 10.0f : -10.0f));
-            }
-        }
-        DrawDevice(graphics, settings, pressed, controller);
-        if (editing_) {
-            Gdiplus::FontFamily family(L"Segoe UI");
-            Gdiplus::Font hint(&family, 11.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
-            Label(graphics, L"DRAG", hint, Gdiplus::Color(190, 7, 12, 18), 406.0f, 199.0f, 90.0f, 18.0f);
-            Label(graphics, L"DRAG", hint, Gdiplus::Color(235, 255, 255, 255), 406.0f, 198.0f, 90.0f, 18.0f);
-        }
-        graphics.Flush(Gdiplus::FlushIntentionSync);
+        DrawOverlaySurface(surface, settings, pressed, controller, editing_);
     }
-    POINT destination{window.left, window.top}, origin{};
-    SIZE size{width_, height_};
+    POINT destination{window.left, window.top}, origin{viewport.left, viewport.top};
+    SIZE size{viewport.right - viewport.left, viewport.bottom - viewport.top};
     BLENDFUNCTION blend{AC_SRC_OVER, 0, static_cast<BYTE>(std::clamp(settings.opacity, 15, 100) * 255 / 100), AC_SRC_ALPHA};
     UpdateLayeredWindow(hwnd_, nullptr, &destination, &size, memoryDC_, &origin, 0, &blend, ULW_ALPHA);
 }

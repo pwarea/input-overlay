@@ -160,7 +160,7 @@ bool Exercise(input_overlay::OverlayStyle style, int device, bool allSizes,
         render();
         RECT rect{};
         GetWindowRect(overlay.Handle(), &rect);
-        const SIZE expected = input_overlay::OverlaySize(percent);
+        const SIZE expected = input_overlay::OverlaySize(settings);
         if (!Check(rect.right - rect.left == expected.cx && rect.bottom - rect.top == expected.cy,
                    "Rendered size differs from physical pixel geometry")) return false;
         if (!Check(rect.left == settings.x && rect.top == settings.y,

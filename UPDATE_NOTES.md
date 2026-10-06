@@ -1,4 +1,4 @@
-- Added a dedicated DualShock 4 layout with Air, Frost, and Prism styles.
-- Added DualShock 4 to the Controller layout selector and appearance previews.
-- Added transparent PS4 artwork with independent button, shoulder, trigger, and stick feedback.
-- Preserved existing Xbox and DualSense appearances, saved input selections, separate device sizes, application filters, and hidden state.
+- Removed the oversized transparent drag area around Xbox, DualSense, and DualShock 4 overlays.
+- Controller overlays can now move close to the screen edges, including the bottom-left corner.
+- Preserved existing controller placement when loading settings from earlier versions.
+- Kept controller artwork, physical scale, click-through behavior, and application filtering unchanged.

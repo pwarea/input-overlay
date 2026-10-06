@@ -76,13 +76,13 @@ For interactive checks, configure CMake with `-DINPUT_OVERLAY_BUILD_MANUAL_TESTS
 Create a portable package from a release build:
 
 ```powershell
-./scripts/package.ps1 -ExecutablePath 'dist/Input Overlay.exe' -Version 0.4.1
+./scripts/package.ps1 -ExecutablePath 'dist/Input Overlay.exe' -Version 0.4.2
 ```
 
-Upload `dist/releases/v0.4.1/Input-Overlay-windows-x64.zip` and its `.sha256` file to the GitHub release. Keep the ZIP asset name the same in each release so the download badge counts it across versions. The ZIP includes only the executable, README, license, and third-party notices. The packager never includes local settings or debug files.
+Upload `dist/releases/v0.4.2/Input-Overlay-windows-x64.zip` and its `.sha256` file to the GitHub release. Keep the ZIP asset name the same in each release so the download badge counts it across versions. The ZIP includes only the executable, README, license, and third-party notices. The packager never includes local settings or debug files.
 
 Every push to `main` runs the Windows build and tests, then publishes a release tagged `build-<full commit SHA>`. The release includes the portable ZIP and the four individually hashed files used by the updater. Files are uploaded to a draft before publication, so clients do not install partial releases. Only a successful build of the current `main` commit is marked as the latest release. Pull requests build and test without publishing.
 
 To write the update notes displayed in the application, replace the bullets in [UPDATE_NOTES.md](UPDATE_NOTES.md) and include that change in the same commit as your update. Use up to 32 single-line bullet points of at most 1000 characters. When that file is unchanged in the commit, its nonempty commit-message lines become the notes instead; attribution trailers are omitted. Notes are displayed as plain text.
 
-Pushing a `v0.4.1` tag matching the CMake version separately prepares a draft versioned release for manual review. In-app updates continue to follow `main` and its commit-specific releases.
+Pushing a `v0.4.2` tag matching the CMake version separately prepares a draft versioned release for manual review. In-app updates continue to follow `main` and its commit-specific releases.

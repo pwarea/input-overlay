@@ -257,7 +257,7 @@ void Application::PollController() {
 }
 
 void Application::SetPosition(int x, int y) {
-    const SIZE size = OverlaySize(EffectiveOverlayScale(settings));
+    const SIZE size = OverlaySize(settings);
     RECT rect{x, y, x + size.cx, y + size.cy};
     HMONITOR monitor = MonitorFromRect(&rect, MONITOR_DEFAULTTONEAREST);
     MONITORINFOEXW info{}; info.cbSize = sizeof(info); GetMonitorInfoW(monitor, &info);

@@ -1,4 +1,5 @@
 #include "app.hpp"
+#include "geometry.hpp"
 #include <dwmapi.h>
 #include <algorithm>
 #include <atomic>
@@ -233,6 +234,7 @@ bool LoadSettings(const std::wstring& file, Settings& settings) {
     std::wstring line, section;
     bool hasControllerAccent = false;
     bool hasControllerScale = false;
+    int positionVersion = 1;
     while (std::getline(stream, line)) {
         if (!line.empty() && line.back() == L'\r') line.pop_back();
         if (line.size() > 65536) continue;
@@ -299,7 +301,8 @@ bool LoadSettings(const std::wstring& file, Settings& settings) {
                 continue;
             }
             if (!numeric) continue;
-            if (key == L"x") settings.x = number;
+            if (key == L"positionVersion") positionVersion = number;
+            else if (key == L"x") settings.x = number;
             else if (key == L"y") settings.y = number;
             else if (key == L"scale") settings.scale = number;
             else if (key == L"opacity") settings.opacity = number;
@@ -334,6 +337,12 @@ bool LoadSettings(const std::wstring& file, Settings& settings) {
         settings.controllerAccent = settings.accent;
     if (!hasControllerScale) settings.controllerScale = settings.scale;
     NormalizeSettings(settings);
+    if (positionVersion < 2 && settings.device == OverlayDevice::Controller) {
+        const SIZE legacySize = OverlaySize(settings.controllerScale);
+        const RECT viewport = OverlayViewport(settings);
+        settings.x = std::min(32767, settings.x + static_cast<int>(settings.anchorRight ? legacySize.cx - viewport.right : viewport.left));
+        settings.y = std::min(32767, settings.y + static_cast<int>(settings.anchorBottom ? legacySize.cy - viewport.bottom : viewport.top));
+    }
     return true;
 }
 
@@ -341,7 +350,7 @@ bool SaveSettings(const std::wstring& file, const Settings& settings) {
     Settings clean = settings;
     NormalizeSettings(clean);
     std::wostringstream output;
-    output << L"[General]\r\nversion=1\r\nx=" << clean.x << L"\r\ny=" << clean.y << L"\r\nscale=" << clean.scale
+    output << L"[General]\r\nversion=1\r\npositionVersion=2\r\nx=" << clean.x << L"\r\ny=" << clean.y << L"\r\nscale=" << clean.scale
         << L"\r\nopacity=" << clean.opacity << L"\r\naccent=" << clean.accent << L"\r\nenabled=" << clean.enabled
         << L"\r\nstyle=" << static_cast<int>(clean.style)
         << L"\r\ncolorTheme=" << static_cast<int>(clean.colorTheme)

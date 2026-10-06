@@ -170,7 +170,7 @@ void TestControllerScale(const TemporaryDirectory& temp) {
         settings.device = device;
         const int expected = device == input_overlay::OverlayDevice::Controller ? 145 : 75;
         Check(input_overlay::EffectiveOverlayScale(settings) == expected, "Effective scale must use the active device preference");
-        const auto size = input_overlay::OverlaySize(expected);
+        const auto size = input_overlay::OverlaySize(settings);
         for (const RECT screen : {display, resized}) {
             const auto position = input_overlay::AnchoredPosition(settings, screen);
             Check(screen.right - position.x - size.cx == settings.x && screen.bottom - position.y - size.cy == settings.y,
@@ -214,6 +214,126 @@ void TestControllerScale(const TemporaryDirectory& temp) {
     }
     Check(!input_overlay::LoadSettings(temp.File(L"new-device-sizes.ini"), settings) && settings.scale == 100 && settings.controllerScale == 100,
         "Missing settings must reset both sizes to their defaults");
+}
+
+void TestControllerViewport() {
+    const RECT screens[] = {{0, 0, 1920, 1080}, {0, 0, 1280, 720}, {-1920, -200, 0, 880}};
+    for (int model = 0; model < input_overlay::ControllerLayoutCount; ++model) {
+        auto settings = input_overlay::DefaultSettings();
+        settings.device = input_overlay::OverlayDevice::Controller;
+        settings.controllerLayout = static_cast<input_overlay::ControllerLayout>(model);
+        for (int scale = 10; scale <= 200; ++scale) {
+            settings.controllerScale = scale;
+            const SIZE legacy = input_overlay::OverlaySize(scale);
+            const RECT viewport = input_overlay::OverlayViewport(settings);
+            const SIZE size = input_overlay::OverlaySize(settings);
+            Check(viewport.left >= 0 && viewport.top >= 0 && viewport.right <= legacy.cx && viewport.bottom <= legacy.cy &&
+                size.cx == viewport.right - viewport.left && size.cy == viewport.bottom - viewport.top && size.cx > 0 && size.cy > 0,
+                "Every controller model and scale must have a nonempty crop inside the original drawing canvas");
+            Check(size.cx < legacy.cx,
+                "Controller windows must discard the unused keyboard canvas width at every supported scale");
+            for (const bool right : {false, true}) for (const bool bottom : {false, true}) {
+                settings.anchorRight = right;
+                settings.anchorBottom = bottom;
+                for (const RECT screen : screens) {
+                    settings.x = settings.y = 0;
+                    const POINT edge = input_overlay::AnchoredPosition(settings, screen);
+                    Check((right ? edge.x + size.cx == screen.right : edge.x == screen.left) &&
+                        (bottom ? edge.y + size.cy == screen.bottom : edge.y == screen.top),
+                        "Controller crops must reach every screen edge, including the lower left of negative-origin displays");
+                    settings.x = 41;
+                    settings.y = 29;
+                    const POINT position = input_overlay::AnchoredPosition(settings, screen);
+                    Check((right ? screen.right - position.x - size.cx : position.x - screen.left) == settings.x &&
+                        (bottom ? screen.bottom - position.y - size.cy : position.y - screen.top) == settings.y,
+                        "Controller scale, resolution and display origin must preserve the chosen edge distances");
+                    auto dragged = settings;
+                    input_overlay::AnchorPosition(dragged, screen, position);
+                    const POINT restored = input_overlay::AnchoredPosition(dragged, screen);
+                    Check(dragged.anchorRight == right && dragged.anchorBottom == bottom && dragged.x == 41 && dragged.y == 29 &&
+                        restored.x == position.x && restored.y == position.y,
+                        "Controller dragging must round trip each corner without adding hidden canvas margins");
+                }
+            }
+        }
+    }
+    for (int scale = 10; scale <= 200; ++scale) {
+        auto settings = input_overlay::DefaultSettings();
+        settings.scale = scale;
+        const SIZE legacy = input_overlay::OverlaySize(scale), current = input_overlay::OverlaySize(settings);
+        const RECT viewport = input_overlay::OverlayViewport(settings);
+        Check(viewport.left == 0 && viewport.top == 0 && viewport.right == legacy.cx && viewport.bottom == legacy.cy &&
+            current.cx == legacy.cx && current.cy == legacy.cy,
+            "The controller crop must leave keyboard and mouse canvas dimensions unchanged");
+    }
+}
+
+void TestControllerPositionMigration(const TemporaryDirectory& temp) {
+    const auto file = temp.File(L"controller-position.ini");
+    const RECT screens[] = {{0, 0, 1920, 1080}, {0, 0, 1280, 720}, {-1920, -200, 0, 880}};
+    for (int model = 0; model < input_overlay::ControllerLayoutCount; ++model)
+        for (const int scale : {10, 25, 75, 100, 137, 157, 200})
+            for (const bool right : {false, true}) for (const bool bottom : {false, true}) {
+                const std::string values = "device=1\ncontrollerLayout=" + std::to_string(model) +
+                    "\nscale=63\ncontrollerScale=" + std::to_string(scale) + "\nx=83\ny=57\nanchorRight=" +
+                    std::to_string(right) + "\nanchorBottom=" + std::to_string(bottom) +
+                    "\nenabled=0\nonlySelectedApps=1\nstartMinimized=1\n";
+                WriteBytes(file, "[General]\nversion=1\n" + values);
+                input_overlay::Settings migrated;
+                Check(input_overlay::LoadSettings(file, migrated), "Legacy controller positions must load");
+                const SIZE legacy = input_overlay::OverlaySize(scale);
+                const RECT viewport = input_overlay::OverlayViewport(migrated);
+                Check(migrated.x == 83 + (right ? legacy.cx - viewport.right : viewport.left) &&
+                    migrated.y == 57 + (bottom ? legacy.cy - viewport.bottom : viewport.top),
+                    "Legacy controller margins must account for removed canvas space on their anchored edges");
+                Check(migrated.controllerScale == scale && migrated.scale == 63 && migrated.anchorRight == right &&
+                    migrated.anchorBottom == bottom && !migrated.enabled && migrated.onlySelectedApps && migrated.startMinimized,
+                    "Position migration must preserve scale, anchors, visibility and startup preferences");
+                for (const RECT screen : screens) {
+                    const POINT before{right ? screen.right - legacy.cx - 83 : screen.left + 83,
+                        bottom ? screen.bottom - legacy.cy - 57 : screen.top + 57};
+                    const POINT after = input_overlay::AnchoredPosition(migrated, screen);
+                    Check(after.x == before.x + viewport.left && after.y == before.y + viewport.top,
+                        "Upgrading must preserve the visible controller position on normal, resized and negative-origin displays");
+                }
+                for (int reload = 0; reload < 3; ++reload) {
+                    Check(input_overlay::SaveSettings(file, migrated), "Migrated controller placement must save");
+                    input_overlay::Settings restored;
+                    Check(input_overlay::LoadSettings(file, restored) && restored.x == migrated.x && restored.y == migrated.y &&
+                        restored.anchorRight == right && restored.anchorBottom == bottom && restored.controllerLayout == migrated.controllerLayout,
+                        "Saving and reopening migrated positions must never apply the canvas offset again");
+                    migrated = restored;
+                }
+                for (const int version : {2, 3}) {
+                    WriteBytes(file, "[General]\npositionVersion=" + std::to_string(version) + "\n" + values);
+                    Check(input_overlay::LoadSettings(file, migrated) && migrated.x == 83 && migrated.y == 57,
+                        "Current and future position versions must suppress legacy canvas migration");
+                }
+            }
+    for (const int scale : {-1, 10, 100, 200, INT_MAX}) {
+        WriteBytes(file, "[General]\ndevice=1\ncontrollerLayout=999\nscale=" + std::to_string(scale) +
+            "\nx=-1\ny=2147483647\nanchorRight=0\nanchorBottom=1\n");
+        input_overlay::Settings migrated;
+        Check(input_overlay::LoadSettings(file, migrated), "Legacy shared-scale controller settings must load");
+        const RECT viewport = input_overlay::OverlayViewport(migrated);
+        Check(migrated.controllerLayout == input_overlay::ControllerLayout::Xbox &&
+            migrated.controllerScale == std::clamp(scale, 10, 200) && migrated.x == viewport.left && migrated.y == 32767,
+            "Migration must use normalized model and legacy scale while keeping corrupt margins bounded");
+    }
+    for (const bool right : {false, true}) for (const bool bottom : {false, true}) {
+        WriteBytes(file, "[General]\ndevice=0\ncontrollerScale=157\nx=83\ny=57\nanchorRight=" + std::to_string(right) +
+            "\nanchorBottom=" + std::to_string(bottom) + "\n");
+        input_overlay::Settings keyboard;
+        Check(input_overlay::LoadSettings(file, keyboard) && keyboard.x == 83 && keyboard.y == 57 &&
+            keyboard.anchorRight == right && keyboard.anchorBottom == bottom,
+            "Legacy keyboard placements must not receive controller canvas offsets");
+    }
+    input_overlay::Settings fresh;
+    Check(!input_overlay::LoadSettings(temp.File(L"new-controller-position.ini"), fresh) && fresh.x == 32 && fresh.y == 32,
+        "New installations must keep their default margins without legacy migration");
+    fresh.device = input_overlay::OverlayDevice::Controller;
+    Check(input_overlay::SaveSettings(file, fresh) && input_overlay::LoadSettings(file, fresh) && fresh.x == 32 && fresh.y == 32,
+        "New controller placements must retain their default crop margins after restarting");
 }
 
 void TestPersistence(const TemporaryDirectory& temp) {
@@ -825,6 +945,8 @@ int main() {
         TestApplicationMatching();
         TestGeometry();
         TestControllerScale(temp);
+        TestControllerViewport();
+        TestControllerPositionMigration(temp);
         TestPersistence(temp);
         TestStyles(temp);
         TestColorSettings(temp);

@@ -358,7 +358,8 @@ void TestIndependentSizes(Harness& harness, HWND allowedWindow) {
         return SIZE{rect.right - rect.left, rect.bottom - rect.top};
     };
     const auto expectSize = [&](int scale) {
-        const SIZE actual = size(), expected = OverlaySize(scale);
+        Check(EffectiveOverlayScale(app.settings) == scale, "Active device must retain its selected scale");
+        const SIZE actual = size(), expected = OverlaySize(app.settings);
         Check(actual.cx == expected.cx && actual.cy == expected.cy, "Live overlay dimensions must follow the active device size");
     };
     const auto slide = [window](int id, int value, int notification = TB_ENDTRACK) {
@@ -484,6 +485,52 @@ void TestIndependentSizes(Harness& harness, HWND allowedWindow) {
         "Size and position from keyboard appearance must open the Layout page");
 }
 
+void TestControllerEdgePosition(Harness& harness) {
+    auto& app = harness.app;
+    const Settings original = app.settings;
+    app.settings.device = OverlayDevice::Controller;
+    app.settings.enabled = false;
+    const RECT screen = MonitorFor(app.settings).rcMonitor;
+    for (int layout = 0; layout < ControllerLayoutCount; ++layout) {
+        app.settings.controllerLayout = static_cast<ControllerLayout>(layout);
+        for (const int scale : {10, 100, 157, 200}) {
+            app.settings.controllerScale = scale;
+            harness.BeginPreview();
+            const SIZE size = OverlaySize(app.settings);
+            Check(size.cx < OverlaySize(scale).cx, "Controller drag area must exclude the keyboard canvas padding");
+            app.SetPosition(screen.left, screen.bottom - size.cy);
+            app.overlay.Render(ResolvedSettings(app.settings), app.pressed, app.controllerState);
+            RECT placed{};
+            Check(GetWindowRect(app.overlay.Handle(), &placed) != FALSE &&
+                placed.left == screen.left && placed.bottom == screen.bottom &&
+                placed.right - placed.left == size.cx && placed.bottom - placed.top == size.cy,
+                "Every controller layout must remain at the bottom-left screen edge after a move");
+            Settings saved;
+            Check(LoadSettings(app.configPath, saved) && saved.x == 0 && saved.y == 0 &&
+                !saved.anchorRight && saved.anchorBottom && !saved.enabled && saved.onlySelectedApps &&
+                saved.applications == original.applications,
+                "Moving a controller to the screen edge must persist zero margins and preserve visibility preferences");
+            const POINT restored = AnchoredPosition(saved, screen);
+            Check(restored.x == placed.left && restored.y == placed.top,
+                "Reloading controller position must not restore the old transparent padding");
+            Focus(harness.outside);
+            app.UpdateVisibility();
+            harness.Expect(false, false, "Leaving Settings after a controller move must end editing and restore manual hide");
+            Check((GetWindowLongPtrW(app.overlay.Handle(), GWL_EXSTYLE) & WS_EX_TRANSPARENT) != 0,
+                "Finishing controller positioning must restore click-through");
+            app.overlay.Render(ResolvedSettings(app.settings), app.pressed, app.controllerState);
+            RECT afterEditing{};
+            GetWindowRect(app.overlay.Handle(), &afterEditing);
+            Check(EqualRect(&placed, &afterEditing) != FALSE,
+                "Leaving controller move mode must not change the cropped window position or size");
+        }
+    }
+    app.settings = original;
+    app.Changed();
+    Focus(app.preferences.Handle());
+    app.UpdateVisibility();
+}
+
 void RunTests() {
     Desktop desktop;
     TemporaryDirectory directory;
@@ -567,6 +614,7 @@ void RunTests() {
     TestControllerAppearance(harness, allowed.window);
     TestControllerInputSelection(harness);
     TestIndependentSizes(harness, allowed.window);
+    TestControllerEdgePosition(harness);
     SendMessageW(settingsWindow, WM_COMMAND, MAKEWPARAM(NavLayout, BN_CLICKED), 0);
     Check(GetDlgItem(settingsWindow, Scale) && GetDlgItem(settingsWindow, Opacity) && GetDlgItem(settingsWindow, MoveOverlay) &&
         GetDlgItem(settingsWindow, ResetPosition) && GetDlgItem(settingsWindow, Enabled) && GetDlgItem(settingsWindow, Layout),
