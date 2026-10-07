@@ -79,7 +79,7 @@ bool PreviewChecks() {
     const auto pressed = draw(true);
     const float scale = std::min((width - 24.0f) / input_overlay::OverlayDesignWidth,
         (height - 24.0f) / input_overlay::OverlayDesignHeight);
-    const auto index = [scale](float x, float y) {
+    const auto index = [scale, width, height](float x, float y) {
         const int left = static_cast<int>((width - std::ceil(input_overlay::OverlayDesignWidth * scale)) * 0.5f + x * scale);
         const int top = static_cast<int>((height - std::ceil(input_overlay::OverlayDesignHeight * scale)) * 0.5f + y * scale);
         return static_cast<size_t>(top * width + left);

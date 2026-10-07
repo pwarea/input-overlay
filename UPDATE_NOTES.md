@@ -1,4 +1,4 @@
-- Removed the oversized transparent drag area around Xbox, DualSense, and DualShock 4 overlays.
-- Controller overlays can now move close to the screen edges, including the bottom-left corner.
-- Preserved existing controller placement when loading settings from earlier versions.
-- Kept controller artwork, physical scale, click-through behavior, and application filtering unchanged.
+- Added Original controller designs: black DualShock 4 and white-and-black Xbox and DualSense, with neutral Home icons.
+- Original starts fully opaque and saves its transparency independently from keyboard and other controller styles.
+- Added Solid (100%), Transparent (55%), a 15%-100% opacity slider, and Reset opacity.
+- Preserved close-fitting controller movement bounds and prevented artwork clipping at small sizes.
