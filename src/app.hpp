@@ -47,8 +47,8 @@ constexpr int ColorThemeCount = 6;
 enum class OverlayDevice { KeyboardMouse = 0, Controller = 1 };
 enum class ControllerLayout { Xbox = 0, PlayStation = 1, DualShock4 = 2 };
 constexpr int ControllerLayoutCount = 3;
-enum class ControllerStyle { Air = 0, Frost = 1, Prism = 2 };
-constexpr int ControllerStyleCount = 3;
+enum class ControllerStyle { Air = 0, Frost = 1, Prism = 2, Original = 3 };
+constexpr int ControllerStyleCount = 4;
 
 struct Slot {
     std::wstring label;
@@ -66,6 +66,7 @@ struct Settings {
     OverlayDevice device = OverlayDevice::KeyboardMouse;
     ControllerLayout controllerLayout = ControllerLayout::Xbox;
     ControllerStyle controllerStyle = ControllerStyle::Frost;
+    int originalOpacity = 100;
     COLORREF controllerAccent = CLR_INVALID;
     int controllerIndex = -1, controllerDeadzone = 15, controllerScale = 100;
     bool enabled = true, onlySelectedApps = false, showMouse = true;
@@ -78,6 +79,10 @@ struct Settings {
 };
 inline int EffectiveOverlayScale(const Settings& settings) {
     return settings.device == OverlayDevice::Controller ? settings.controllerScale : settings.scale;
+}
+inline int EffectiveOverlayOpacity(const Settings& settings) {
+    return settings.device == OverlayDevice::Controller && settings.controllerStyle == ControllerStyle::Original
+        ? settings.originalOpacity : settings.opacity;
 }
 struct WindowInfo { HWND hwnd = nullptr; std::wstring title, path; };
 

@@ -3,6 +3,7 @@
 #include "colors.hpp"
 #include "controller_art.hpp"
 #include "dualshock4_art.hpp"
+#include "controller_original_art.hpp"
 #include <objidl.h>
 #include <gdiplus.h>
 #include <algorithm>
@@ -427,7 +428,9 @@ void DrawController(Gdiplus::Graphics& graphics, const Settings& settings,
     const auto saved = graphics.Save();
     graphics.TranslateTransform(105.0f, 2.0f);
     graphics.ScaleTransform(0.60f, 0.60f);
-    if (settings.controllerLayout == ControllerLayout::DualShock4)
+    if (settings.controllerStyle == ControllerStyle::Original)
+        controller_original_art::DrawArtwork(graphics, settings, controller);
+    else if (settings.controllerLayout == ControllerLayout::DualShock4)
         dualshock4_art::DrawArtwork(graphics, settings, controller);
     else controller_art::DrawArtwork(graphics, settings, controller);
     graphics.Restore(saved);
@@ -570,7 +573,7 @@ void DrawOverlayPreview(HDC dc, const RECT& bounds, const Settings& settings, bo
         graphics.Flush(Gdiplus::FlushIntentionSync);
     }
     Gdiplus::ColorMatrix opacity = {{{1, 0, 0, 0, 0}, {0, 1, 0, 0, 0}, {0, 0, 1, 0, 0},
-        {0, 0, 0, std::clamp(settings.opacity, 15, 100) / 100.0f, 0}, {0, 0, 0, 0, 1}}};
+        {0, 0, 0, std::clamp(EffectiveOverlayOpacity(settings), 15, 100) / 100.0f, 0}, {0, 0, 0, 0, 1}}};
     Gdiplus::ImageAttributes attributes;
     attributes.SetColorMatrix(&opacity);
     const Gdiplus::RectF destination(panel.X + (panel.Width - surfaceWidth) * 0.5f,
@@ -637,7 +640,7 @@ void Overlay::Render(const Settings& settings, const std::array<bool, InputCount
         GetWindowRect(hwnd_, &window);
     }
     const RECT viewport = OverlayViewport(settings);
-    const SIZE surfaceSize = OverlaySize(EffectiveOverlayScale(settings));
+    const SIZE surfaceSize = OverlayCanvasSize(settings);
     const int width = surfaceSize.cx;
     const int height = surfaceSize.cy;
     if (width != width_ || height != height_) {
@@ -669,7 +672,7 @@ void Overlay::Render(const Settings& settings, const std::array<bool, InputCount
     }
     POINT destination{window.left, window.top}, origin{viewport.left, viewport.top};
     SIZE size{viewport.right - viewport.left, viewport.bottom - viewport.top};
-    BLENDFUNCTION blend{AC_SRC_OVER, 0, static_cast<BYTE>(std::clamp(settings.opacity, 15, 100) * 255 / 100), AC_SRC_ALPHA};
+    BLENDFUNCTION blend{AC_SRC_OVER, 0, static_cast<BYTE>(std::clamp(EffectiveOverlayOpacity(settings), 15, 100) * 255 / 100), AC_SRC_ALPHA};
     UpdateLayeredWindow(hwnd_, nullptr, &destination, &size, memoryDC_, &origin, 0, &blend, ULW_ALPHA);
 }
 

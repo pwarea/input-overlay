@@ -8,17 +8,29 @@ inline SIZE OverlaySize(int scale) {
     scale = std::clamp(scale, 10, 200);
     return {MulDiv(OverlayBaseWidth, scale, 100), MulDiv(OverlayBaseHeight, scale, 100)};
 }
+inline SIZE OverlayCanvasSize(const Settings& s) {
+    const int percent = std::clamp(EffectiveOverlayScale(s), 10, 200);
+    if (s.device != OverlayDevice::Controller || s.controllerStyle != ControllerStyle::Original)
+        return OverlaySize(percent);
+    const float scale = static_cast<float>(percent) / 100.0f *
+        static_cast<float>(OverlayBaseWidth) / static_cast<float>(OverlayDesignWidth);
+    return {static_cast<LONG>(std::ceil(OverlayDesignWidth * scale)),
+            static_cast<LONG>(std::ceil(OverlayDesignHeight * scale))};
+}
 inline RECT OverlayViewport(const Settings& s) {
     const int percent = std::clamp(EffectiveOverlayScale(s), 10, 200);
-    const SIZE canvas = OverlaySize(percent);
+    const SIZE canvas = OverlayCanvasSize(s);
     if (s.device != OverlayDevice::Controller) return {0, 0, canvas.cx, canvas.cy};
     const float scale = static_cast<float>(percent) / 100.0f *
         static_cast<float>(OverlayBaseWidth) / static_cast<float>(OverlayDesignWidth);
     const bool dualShock4 = s.controllerLayout == ControllerLayout::DualShock4;
-    const float left = 105.0f + 0.60f * (dualShock4 ? 3.0f : 0.0f);
-    const float right = 105.0f + 0.60f * (dualShock4 ? 497.0f : 500.0f);
+    const bool original = s.controllerStyle == ControllerStyle::Original;
+    const float left = 105.0f + 0.60f * (original ? -1.0f : dualShock4 ? 3.0f : 0.0f);
+    const float right = 105.0f + 0.60f * (original ? 501.0f : dualShock4 ? 497.0f : 500.0f);
     const float top = 2.0f + 0.60f * 4.0f;
-    const float bottom = 2.0f + 0.60f * (dualShock4 ? 313.0f : 348.0f);
+    const float bodyBottom = original ? (dualShock4 ? 322.0f :
+        s.controllerLayout == ControllerLayout::PlayStation ? 341.0f : 358.0f) : dualShock4 ? 313.0f : 348.0f;
+    const float bottom = 2.0f + 0.60f * bodyBottom;
     return {std::max(0L, static_cast<LONG>(std::floor(left * scale)) - 1),
             std::max(0L, static_cast<LONG>(std::floor(top * scale)) - 1),
             std::min(canvas.cx, static_cast<LONG>(std::ceil(right * scale)) + 1),

@@ -79,7 +79,7 @@ bool PreviewChecks() {
     const auto pressed = draw(true);
     const float scale = std::min((width - 24.0f) / input_overlay::OverlayDesignWidth,
         (height - 24.0f) / input_overlay::OverlayDesignHeight);
-    const auto index = [scale, width, height](float x, float y) {
+    const auto index = [scale](float x, float y) {
         const int left = static_cast<int>((width - std::ceil(input_overlay::OverlayDesignWidth * scale)) * 0.5f + x * scale);
         const int top = static_cast<int>((height - std::ceil(input_overlay::OverlayDesignHeight * scale)) * 0.5f + y * scale);
         return static_cast<size_t>(top * width + left);
@@ -96,6 +96,34 @@ bool PreviewChecks() {
     ok = Check(normal != draw(false, true), "Light preview background has no effect") && ok;
     settings.opacity = 15;
     ok = Check(red(draw()) < red(normal), "Preview ignores overall overlay opacity") && ok;
+    settings.device = input_overlay::OverlayDevice::Controller;
+    for (int model = 0; model < input_overlay::ControllerLayoutCount; ++model) {
+        settings.controllerLayout = static_cast<input_overlay::ControllerLayout>(model);
+        settings.controllerStyle = input_overlay::ControllerStyle::Original;
+        for (const bool active : {false, true}) for (const bool light : {false, true}) {
+            settings.opacity = 15;
+            settings.originalOpacity = 100;
+            const auto solid = draw(active, light);
+            settings.opacity = 100;
+            ok = Check(solid == draw(active, light), "Shared opacity changed the Original preview") && ok;
+            settings.originalOpacity = 55;
+            const auto transparent = draw(active, light);
+            ok = Check(solid != transparent, "Original preview ignores its opacity") && ok;
+            ok = Check(solid[0] == transparent[0], "Original opacity changed the preview background") && ok;
+            settings.originalOpacity = 100;
+            ok = Check(solid == draw(active, light), "Restoring solid opacity did not restore Original pixels") && ok;
+        }
+        settings.controllerStyle = input_overlay::ControllerStyle::Frost;
+        const auto frost = draw();
+        settings.originalOpacity = 15;
+        ok = Check(frost == draw(), "Original opacity changed another controller style") && ok;
+    }
+    settings.device = input_overlay::OverlayDevice::KeyboardMouse;
+    const auto keyboard = draw();
+    settings.originalOpacity = 100;
+    ok = Check(keyboard == draw(), "Original opacity changed the keyboard preview") && ok;
+    settings.device = input_overlay::OverlayDevice::Controller;
+    settings.controllerStyle = input_overlay::ControllerStyle::Original;
     const DWORD gdiBefore = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS);
     const DWORD userBefore = GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS);
     for (int i = 0; i < 60; ++i) {

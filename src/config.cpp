@@ -169,6 +169,7 @@ void NormalizeSettings(Settings& settings) {
     settings.scale = std::clamp(settings.scale, 10, 200);
     settings.controllerScale = std::clamp(settings.controllerScale, 10, 200);
     settings.opacity = std::clamp(settings.opacity, 15, 100);
+    settings.originalOpacity = std::clamp(settings.originalOpacity, 15, 100);
     settings.gradientFillOpacity = std::clamp(settings.gradientFillOpacity, 4, 45);
     settings.accent &= 0x00ffffff;
     if (settings.controllerAccent != CLR_INVALID && settings.controllerAccent > 0x00ffffff)
@@ -248,6 +249,10 @@ bool LoadSettings(const std::wstring& file, Settings& settings) {
         int number = 0;
         const bool numeric = ParseInt(value, number);
         if (section == L"General") {
+            if (key == L"originalOpacity") {
+                settings.originalOpacity = numeric ? std::clamp(number, 15, 100) : 100;
+                continue;
+            }
             if (key == L"gradientFillOpacity") {
                 settings.gradientFillOpacity = numeric ? std::clamp(number, 4, 45) : 16;
                 continue;
@@ -359,6 +364,7 @@ bool SaveSettings(const std::wstring& file, const Settings& settings) {
         << L"\r\ndevice=" << static_cast<int>(clean.device)
         << L"\r\ncontrollerLayout=" << static_cast<int>(clean.controllerLayout)
         << L"\r\ncontrollerStyle=" << static_cast<int>(clean.controllerStyle)
+        << L"\r\noriginalOpacity=" << clean.originalOpacity
         << L"\r\ncontrollerScale=" << clean.controllerScale
         << L"\r\ncontrollerAccent=" << (clean.controllerAccent == CLR_INVALID ? -1 : static_cast<int>(clean.controllerAccent))
         << L"\r\ncontrollerIndex=" << clean.controllerIndex << L"\r\ncontrollerDeadzone=" << clean.controllerDeadzone

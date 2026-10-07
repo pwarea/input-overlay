@@ -5,6 +5,7 @@ namespace {
 struct LayeredUpdate {
     POINT origin{};
     SIZE size{}, canvas{};
+    BYTE opacity = 0;
     std::vector<std::uint32_t> pixels;
     bool called = false, succeeded = false;
 } layeredUpdate;
@@ -14,6 +15,7 @@ BOOL WINAPI UpdateLayeredForTest(HWND window, HDC destination, POINT* position, 
                                 BLENDFUNCTION* blend, DWORD flags) {
     layeredUpdate = {};
     layeredUpdate.called = true;
+    if (blend) layeredUpdate.opacity = blend->SourceConstantAlpha;
     if (origin && size && source) {
         layeredUpdate.origin = *origin;
         layeredUpdate.size = *size;
@@ -96,11 +98,21 @@ void CheckShoulderFeedback(const Settings& settings, const ControllerState& idle
         else state.rightTrigger = 1.0f;
         const auto active = Draw(settings, state);
         const bool right = control % 2 != 0;
-        const float regionLeft = 105.0f + (right ? 270.0f : 50.0f) * .60f;
-        const float regionRight = 105.0f + (right ? 450.0f : 230.0f) * .60f;
+        float regionLeft = 105.0f + (right ? 270.0f : 50.0f) * .60f;
+        float regionRight = 105.0f + (right ? 450.0f : 230.0f) * .60f;
+        float regionBottom = 47.0f;
+        if (settings.controllerStyle == ControllerStyle::Original) {
+            Gdiplus::GraphicsPath shoulder;
+            controller_original_geometry::Shoulder(shoulder, settings.controllerLayout, right ? 1 : 0, control >= 2);
+            Gdiplus::RectF bounds;
+            shoulder.GetBounds(&bounds);
+            regionLeft = 105.0f + (bounds.X - 6.0f) * .60f;
+            regionRight = 105.0f + (bounds.GetRight() + 6.0f) * .60f;
+            regionBottom = 2.0f + (bounds.GetBottom() + 6.0f) * .60f;
+        }
         const int left = static_cast<int>(std::floor(regionLeft * Width / OverlayDesignWidth));
         const int rightEdge = static_cast<int>(std::ceil(regionRight * Width / OverlayDesignWidth));
-        const int bottom = static_cast<int>(std::ceil(47.0f * Height / OverlayDesignHeight));
+        const int bottom = static_cast<int>(std::ceil(regionBottom * Height / OverlayDesignHeight));
         for (int y = 0; y < Height; ++y) for (int x = 0; x < Width; ++x) {
             if (x >= left && x <= rightEdge && y <= bottom) continue;
             const size_t index = static_cast<size_t>(y) * Width + x;
@@ -110,9 +122,10 @@ void CheckShoulderFeedback(const Settings& settings, const ControllerState& idle
             size_t legible = 0;
             for (size_t index = 0; index < idle.size(); ++index)
                 if (CompositeDifference(idle[index], active[index], background) >= 35) ++legible;
-            if (legible < 40) std::fprintf(stderr, "Shoulder contrast: layout=%d style=%d control=%d background=%d pixels=%zu\n",
+            const size_t minimum = settings.controllerStyle == ControllerStyle::Original ? 32 : 40;
+            if (legible < minimum) std::fprintf(stderr, "Shoulder contrast: layout=%d style=%d control=%d background=%d pixels=%zu\n",
                 static_cast<int>(settings.controllerLayout), static_cast<int>(settings.controllerStyle), control, background, legible);
-            Check(legible >= 40, "Bumpers and triggers must remain visible on both dark and light backgrounds at default size");
+            Check(legible >= minimum, "Bumpers and triggers must remain visible on both dark and light backgrounds at default size");
         }
     }
 }
@@ -125,6 +138,15 @@ Frame DrawStickMaterial(const Settings& settings) {
     graphics.Clear(Gdiplus::Color(0, 0, 0, 0));
     graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
     graphics.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHalf);
+    if (settings.controllerStyle == ControllerStyle::Original) {
+        const auto& profile = controller_original_geometry::Get(settings.controllerLayout);
+        const bool xbox = settings.controllerLayout == ControllerLayout::Xbox;
+        controller_original_art::Stick(graphics, Gdiplus::PointF(Width / 2.0f, Height / 2.0f),
+            profile.controls.stickR, profile.stickCapR, xbox, false, 0, 0,
+            xbox ? RGB(126, 208, 72) : RGB(80, 176, 250));
+        graphics.Flush(Gdiplus::FlushIntentionSync);
+        return pixels;
+    }
     const auto& layout = controller_art::geometry::GetLayout(settings.controllerLayout == ControllerLayout::PlayStation);
     const float radius = settings.controllerLayout == ControllerLayout::DualShock4 ? 36.0f : layout.stickR;
     controller_art::Stick(graphics, Gdiplus::PointF(Width / 2.0f, Height / 2.0f), radius,
@@ -148,24 +170,49 @@ void CheckStickPalette(const Settings& source) {
         }
     if (settings.controllerStyle == ControllerStyle::Prism)
         Check(difference >= 64 * 15, "Prism stick cap material must follow its selected gradient colors");
-    else Check(warm == cool, "Air and Frost stick materials must not inherit Prism gradient colors");
+    else Check(warm == cool, "Air, Frost and Original stick materials must not inherit Prism gradient colors");
 }
 
-void CheckTransparency(const Frame& frame) {
-    size_t transparent = 0, translucent = 0;
+void CheckTransparency(const Frame& frame, bool original) {
+    size_t transparent = 0, translucent = 0, opaque = 0;
     for (const auto pixel : frame) {
         const unsigned alpha = pixel >> 24;
         if (!alpha) ++transparent;
         else if (alpha < 128) ++translucent;
+        if (alpha == 255) ++opaque;
         Check(((pixel >> 16) & 255) <= alpha && ((pixel >> 8) & 255) <= alpha && (pixel & 255) <= alpha,
             "Controller pixels must use valid premultiplied alpha");
     }
     Check(transparent > frame.size() / 3, "Controller must leave open transparent space around its silhouette");
-    Check(translucent > frame.size() / 20, "Controller glass must retain see-through interior pixels");
+    if (original) Check(opaque > frame.size() / 8, "Original controller shells must have fully opaque interiors");
+    else Check(translucent > frame.size() / 20, "Controller glass must retain see-through interior pixels");
     for (int x = 0; x < Width; ++x)
         Check(frame[x] == 0 && frame[(Height - 1) * Width + x] == 0, "Controller touches or clips a horizontal canvas edge");
     for (int y = 0; y < Height; ++y)
         Check(frame[y * Width] == 0 && frame[y * Width + Width - 1] == 0, "Controller touches or clips a vertical canvas edge");
+}
+
+void CheckOriginalMaterials(const Settings& settings, const Frame& frame) {
+    Gdiplus::GraphicsPath shell;
+    controller_original_geometry::Shell(shell, settings.controllerLayout);
+    size_t interior = 0;
+    constexpr float scale = .42f, margin = 2.0f / scale;
+    for (int y = 0; y < Height; y += 2) for (int x = 0; x < Width; x += 2) {
+        const float artX = (x + .5f - 73.5f) / scale;
+        const float artY = (y + .5f - 1.4f) / scale;
+        if (!shell.IsVisible(artX, artY) || !shell.IsVisible(artX + margin, artY) ||
+            !shell.IsVisible(artX - margin, artY) || !shell.IsVisible(artX, artY + margin) ||
+            !shell.IsVisible(artX, artY - margin)) continue;
+        ++interior;
+        Check((frame[static_cast<size_t>(y) * Width + x] >> 24) == 255,
+            "Original shell interiors must be fully opaque before optional global transparency");
+    }
+    Check(interior > 500, "Original material test must sample a substantial shell interior");
+    const auto grip = frame[static_cast<size_t>(81) * Width + 92];
+    const int brightness = static_cast<int>(((grip >> 16) & 255) + ((grip >> 8) & 255) + (grip & 255)) / 3;
+    Check((settings.controllerLayout == ControllerLayout::DualShock4 && brightness < 100) ||
+        (settings.controllerLayout != ControllerLayout::DualShock4 && brightness > 140),
+        "Original materials must keep the black DS4 and white Xbox/DualSense body colors");
 }
 
 void CheckInputs(const Settings& settings, const ControllerState& idleState, const Frame& idle) {
@@ -207,7 +254,7 @@ void CheckInputs(const Settings& settings, const ControllerState& idleState, con
 Frame DrawFullSurface(const Settings& settings, const std::array<bool, InputCount>& inputs,
                       const ControllerState& state) {
     const int percent = std::clamp(EffectiveOverlayScale(settings), 10, 200);
-    const SIZE size = OverlaySize(percent);
+    const SIZE size = OverlayCanvasSize(settings);
     Frame pixels(static_cast<size_t>(size.cx) * size.cy);
     Gdiplus::Bitmap bitmap(size.cx, size.cy, size.cx * 4, PixelFormat32bppPARGB,
         reinterpret_cast<BYTE*>(pixels.data()));
@@ -227,7 +274,7 @@ Frame DrawFullSurface(const Settings& settings, const std::array<bool, InputCoun
 
 Frame DrawCroppedSurface(const Settings& settings, const std::array<bool, InputCount>& inputs,
                          const ControllerState& state, bool editing = false) {
-    const SIZE canvas = OverlaySize(EffectiveOverlayScale(settings));
+    const SIZE canvas = OverlayCanvasSize(settings);
     const SIZE size = OverlaySize(settings);
     const RECT viewport = OverlayViewport(settings);
     Frame full(static_cast<size_t>(canvas.cx) * canvas.cy);
@@ -243,7 +290,7 @@ Frame DrawCroppedSurface(const Settings& settings, const std::array<bool, InputC
 
 int CheckCroppedFrame(const Settings& settings, const ControllerState& state, int stateIndex) {
     const std::array<bool, InputCount> inputs{};
-    const SIZE fullSize = OverlaySize(EffectiveOverlayScale(settings)), size = OverlaySize(settings);
+    const SIZE fullSize = OverlayCanvasSize(settings), size = OverlaySize(settings);
     const RECT viewport = OverlayViewport(settings);
     const auto full = DrawFullSurface(settings, inputs, state);
     const auto cropped = DrawCroppedSurface(settings, inputs, state);
@@ -378,7 +425,7 @@ void CheckLayeredSource() {
                     overlay.SetEditing(editing);
                     overlay.Render(settings, inputs, held);
                     const RECT viewport = OverlayViewport(settings);
-                    const SIZE size = OverlaySize(settings), canvas = OverlaySize(scale);
+                    const SIZE size = OverlaySize(settings), canvas = OverlayCanvasSize(settings);
                     if (layeredUpdate.canvas.cx != canvas.cx || layeredUpdate.canvas.cy != canvas.cy)
                         std::fprintf(stderr, "Source bitmap: recorded=%ld,%ld expected=%ld,%ld origin=%ld,%ld size=%ld,%ld\n",
                             layeredUpdate.canvas.cx, layeredUpdate.canvas.cy, canvas.cx, canvas.cy,
@@ -403,6 +450,55 @@ void CheckLayeredSource() {
     overlay.Destroy();
 }
 
+void CheckOriginalOpacity() {
+    Overlay overlay;
+    Check(overlay.Create(GetModuleHandleW(nullptr), nullptr), "Original opacity test surface must be created");
+    Settings settings;
+    settings.device = OverlayDevice::Controller;
+    settings.controllerStyle = ControllerStyle::Original;
+    settings.x = settings.y = -5000;
+    Check(settings.originalOpacity == 100, "Original material must default to fully opaque");
+    const std::array<bool, InputCount> inputs{};
+    ControllerState idle;
+    idle.connected = true;
+    for (int layout = 0; layout < ControllerLayoutCount; ++layout) {
+        settings.controllerLayout = static_cast<ControllerLayout>(layout);
+        settings.originalOpacity = 100;
+        settings.opacity = 15;
+        overlay.Render(settings, inputs, idle);
+        Check(layeredUpdate.succeeded && layeredUpdate.opacity == 255,
+            "Original must remain fully opaque despite a previously transparent keyboard/glass setting");
+        const auto opaque = layeredUpdate.pixels;
+        for (const int opacity : {15, 55, 100}) {
+            settings.originalOpacity = opacity;
+            overlay.Render(settings, inputs, idle);
+            Check(layeredUpdate.succeeded && layeredUpdate.opacity == opacity * 255 / 100 &&
+                layeredUpdate.pixels == opaque,
+                "Original transparency must change only the layered blend while preserving material pixels");
+            size_t maximumAlpha = 0;
+            for (const auto pixel : layeredUpdate.pixels)
+                maximumAlpha = std::max(maximumAlpha, static_cast<size_t>(((pixel >> 24) * layeredUpdate.opacity + 127) / 255));
+            Check(maximumAlpha == static_cast<size_t>(opacity * 255 / 100),
+                "Original body must attain the explicitly selected opacity");
+        }
+        for (const auto style : {ControllerStyle::Air, ControllerStyle::Frost, ControllerStyle::Prism}) {
+            settings.controllerStyle = style;
+            settings.originalOpacity = 55;
+            overlay.Render(settings, inputs, idle);
+            Check(layeredUpdate.opacity == 15 * 255 / 100,
+                "Returning to a glass design must restore the independent glass opacity");
+        }
+        settings.controllerStyle = ControllerStyle::Original;
+        Check(!IsWindowVisible(overlay.Handle()), "Opacity tests must not display their surface");
+    }
+    settings.device = OverlayDevice::KeyboardMouse;
+    settings.opacity = 92;
+    overlay.Render(settings, inputs, {});
+    Check(layeredUpdate.succeeded && layeredUpdate.opacity == 92 * 255 / 100,
+        "Keyboard opacity must stay independent of the selected controller material");
+    overlay.Destroy();
+}
+
 void Run() {
     Settings settings;
     settings.device = OverlayDevice::Controller;
@@ -422,7 +518,8 @@ void Run() {
             auto heldState = state;
             heldState.buttons = 0x1000;
             const auto held = Draw(settings, heldState);
-            CheckTransparency(idle);
+            CheckTransparency(idle, settings.controllerStyle == ControllerStyle::Original);
+            if (settings.controllerStyle == ControllerStyle::Original) CheckOriginalMaterials(settings, idle);
             CheckInputs(settings, state, idle);
             CheckShoulderFeedback(settings, state, idle);
             CheckStickPalette(settings);
@@ -447,12 +544,14 @@ void Run() {
             Check(custom == Draw(settings, state), "Pressed accent must not change idle controller surfaces");
             const auto pink = Draw(settings, heldState);
             settings.controllerAccent = RGB(33, 229, 157);
-            Check((pink != Draw(settings, heldState)) == (settings.controllerStyle != ControllerStyle::Prism),
-                "Air and Frost must honor the pressed accent while Prism retains its gradient");
+            Check((pink != Draw(settings, heldState)) == (settings.controllerStyle == ControllerStyle::Air ||
+                settings.controllerStyle == ControllerStyle::Frost),
+                "Air and Frost must honor the pressed accent while Prism and Original retain their palettes");
             Check(custom == Draw(settings, state), "Unchanged controller state must render deterministically");
         }
     }
     CheckLayeredSource();
+    CheckOriginalOpacity();
     CheckControllerCrops();
     const DWORD before = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS);
     const DWORD userBefore = GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS);
@@ -467,7 +566,7 @@ void Run() {
     const double elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
     Check(GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS) <= before, "Controller drawing leaked GDI handles");
     Check(GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS) <= userBefore, "Controller drawing created or leaked windows");
-    std::printf("Controller render checks passed: nine designs, independent inputs, shoulder contrast on light/dark backgrounds, themed stick materials, analog fill, transparency, stable pixels, no handle leaks; %.2f ms/frame over 180 offscreen frames.\n", elapsed / 180.0);
+    std::printf("Controller render checks passed: twelve designs, independent inputs, shoulder contrast on light/dark backgrounds, themed stick materials, analog fill, opacity, stable pixels, no handle leaks; %.2f ms/frame over 180 offscreen frames.\n", elapsed / 180.0);
 }
 }
 

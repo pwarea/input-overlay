@@ -27,6 +27,7 @@ enum ControlId {
     ControllerMode = 600, ControllerLayoutChoice, ControllerIndex, ControllerDeadzone, ControllerDeadzoneValue,
     ControllerAppearance, ResetControllerStyle, ControllerScale, ControllerScaleValue, ResetControllerSize,
     ControllerStyleFirst = 620, ControllerStyleLast = ControllerStyleFirst + ControllerStyleCount - 1,
+    OriginalOpacityControl = 640, OriginalOpacityValue, OriginalSolid, OriginalTransparent, ResetOriginalOpacity,
     AutoCheckUpdates = 700, CheckUpdates, InstallUpdate, UpdateVersion, UpdateMessage, UpdateNotesTitle, UpdateNotes,
     ThemeFirst = 800, ThemeLast = ThemeFirst + ColorThemeCount - 1, BackgroundStart = 820, BackgroundEnd, PressedColor,
     StartHex, EndHex, SwapGradient, GradientFillControl, GradientFillValue, ResetGradient, GradientStrip,
@@ -34,7 +35,7 @@ enum ControlId {
 };
 const std::array<COLORREF, 5> Accents{{RGB(125, 211, 252), RGB(167, 139, 250), RGB(110, 231, 183), RGB(251, 191, 36), RGB(251, 113, 133)}};
 const wchar_t* StyleNames[] = {L"Outline", L"Neon", L"Glass", L"Circuit", L"Pearl", L"Gradient"};
-const wchar_t* ControllerStyleNames[] = {L"Air", L"Frost", L"Prism"};
+const wchar_t* ControllerStyleNames[] = {L"Air", L"Frost", L"Prism", L"Original"};
 const wchar_t* ThemeNames[] = {L"Original", L"Sunset", L"Aurora", L"Ocean", L"Rose", L"Custom"};
 const wchar_t* PageTitles[] = {L"Overlay", L"Bindings", L"Applications", L"General", L"Controller", L"Updates", L"Layout"};
 const wchar_t* PageSubtitles[] = {
@@ -61,10 +62,14 @@ UiState ui;
 bool GradientAppearance(const Settings& settings, bool controller) {
     return controller ? settings.controllerStyle == ControllerStyle::Prism : settings.style == OverlayStyle::Gradient;
 }
+bool OriginalAppearance(const Settings& settings, bool controller) {
+    return controller && settings.controllerStyle == ControllerStyle::Original;
+}
 ThemeColors AppearancePalette(const Settings& settings, bool controller) {
     return controller ? ControllerThemePalette(settings) : ThemePalette(settings);
 }
 COLORREF AppearanceAccentColor(const Settings& settings, bool controller) {
+    if (OriginalAppearance(settings, controller)) return settings.controllerLayout == ControllerLayout::Xbox ? RGB(126, 208, 72) : RGB(80, 176, 250);
     return controller ? ControllerAccentColor(settings) : settings.accent;
 }
 int Px(int value) { return MulDiv(value, static_cast<int>(ui.dpi), 96); }
@@ -297,7 +302,7 @@ void SettingsWindow::Build() {
         SendMessageW(appearance, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Controller"));
         button(L"Size & position", 650, 108, 144, 30, OpenLayout);
         if (ui.appearanceController) {
-            for (int i = 0; i < ControllerStyleCount; ++i) button(ControllerStyleNames[i], 216 + i * 149, 149, 137, 36, ControllerStyleFirst + i);
+            for (int i = 0; i < ControllerStyleCount; ++i) button(ControllerStyleNames[i], 216 + i * 98, 149, 88, 36, ControllerStyleFirst + i);
             button(L"Reset style", 663, 149, 131, 36, ResetControllerStyle);
         } else {
             for (int i = 0; i < OverlayStyleCount; ++i) button(StyleNames[i], 216 + i * 98, 149, 88, 36, StyleFirst + i);
@@ -311,7 +316,19 @@ void SettingsWindow::Build() {
         SendMessageW(previewLayout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(ui.appearanceController ? L"Xbox" : L"ANSI"));
         SendMessageW(previewLayout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(ui.appearanceController ? L"DualSense" : L"ISO"));
         if (ui.appearanceController) SendMessageW(previewLayout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"DualShock 4"));
-        if (GradientAppearance(app_->settings, ui.appearanceController)) {
+        if (OriginalAppearance(app_->settings, ui.appearanceController)) {
+            text(L"Original opacity", 216, 437, 330, 25, 0, false, ui.heading);
+            button(L"Reset opacity", 654, 431, 140, 32, ResetOriginalOpacity);
+            button(L"Solid (100%)", 216, 479, 182, 36, OriginalSolid);
+            button(L"Transparent (55%)", 410, 479, 206, 36, OriginalTransparent);
+            text(L"", 724, 485, 70, 24, OriginalOpacityValue, true);
+            HWND opacity = add(TRACKBAR_CLASSW, L"Original controller opacity", WS_TABSTOP | TBS_HORZ | TBS_NOTICKS,
+                208, 529, 590, 32, OriginalOpacityControl);
+            SendMessageW(opacity, TBM_SETRANGE, TRUE, MAKELPARAM(15, 100));
+            SendMessageW(opacity, TBM_SETPAGESIZE, 0, 5);
+            text(L"Original colors with their own opacity. Other styles keep their saved opacity.",
+                216, 576, 578, 28, 0, true, ui.smallFont);
+        } else if (GradientAppearance(app_->settings, ui.appearanceController)) {
             text(L"Gradient presets", 216, 431, 276, 25, 0, false, ui.heading);
             text(L"Gradient colors", 512, 431, 144, 25, 0, false, ui.heading);
             button(L"Reset Gradient", 659, 427, 135, 30, ResetGradient);
@@ -381,8 +398,8 @@ void SettingsWindow::Build() {
             216, 531, 578, 49, 0, true);
     } else if (page_ == 4) {
         checkbox(L"Show controller instead of keyboard and mouse", 216, 113, 578, ControllerMode);
-        for (int i = 0; i < ControllerStyleCount; ++i) button(ControllerStyleNames[i], 216 + i * 126, 153, 114, 36, ControllerStyleFirst + i);
-        button(L"Colors", 604, 153, 90, 36, ControllerAppearance);
+        for (int i = 0; i < ControllerStyleCount; ++i) button(ControllerStyleNames[i], 216 + i * 98, 153, 88, 36, ControllerStyleFirst + i);
+        button(app_->settings.controllerStyle == ControllerStyle::Original ? L"Opacity" : L"Colors", 614, 153, 80, 36, ControllerAppearance);
         button(L"Reset style", 704, 153, 90, 36, ResetControllerStyle);
         add(L"STATIC", L"Controller appearance preview", SS_OWNERDRAW, 216, 201, 578, 164, OverlayPreview);
         button(L"Idle", 216, 375, 62, 30, PreviewIdle);
@@ -451,8 +468,8 @@ void SettingsWindow::Build() {
         button(L"Reset position and size", 406, 379, 212, 38, ResetPosition);
         text(L"Drag the overlay, then select Done moving. Switching to another application ends moving automatically.",
             216, 442, 578, 45, 0, true);
-        text(L"Controller size is saved separately on the Controller page. Position and opacity apply to both views. Reset restores keyboard size to 100% and the shared position to the bottom-left corner.",
-            216, 505, 578, 61, 0, true, ui.smallFont);
+        text(L"Controller size is saved on the Controller page. Original has its own opacity under Controller > Opacity; this opacity applies to all other styles. Reset restores keyboard size to 100% and the shared position to the bottom-left corner.",
+            216, 505, 578, 83, 0, true, ui.smallFont);
     }
     ui.updating = false; UpdateControls(); InvalidateRect(hwnd_, nullptr, TRUE);
 }
@@ -476,7 +493,12 @@ void SettingsWindow::UpdateControls() {
         SendDlgItemMessageW(hwnd_, AppearanceDevice, CB_SETCURSEL, ui.appearanceController ? 1 : 0, 0);
         SendDlgItemMessageW(hwnd_, PreviewLayout, CB_SETCURSEL,
             ui.appearanceController ? static_cast<int>(ui.previewControllerLayout) : ui.previewIso ? 1 : 0, 0);
-        if (GradientAppearance(settings, ui.appearanceController)) {
+        if (OriginalAppearance(settings, ui.appearanceController)) {
+            SendDlgItemMessageW(hwnd_, OriginalOpacityControl, TBM_SETPOS, TRUE, settings.originalOpacity);
+            SetText(hwnd_, OriginalOpacityValue, std::to_wstring(settings.originalOpacity) + L"%");
+            InvalidateControl(hwnd_, OriginalSolid);
+            InvalidateControl(hwnd_, OriginalTransparent);
+        } else if (GradientAppearance(settings, ui.appearanceController)) {
             const auto palette = AppearancePalette(settings, ui.appearanceController);
             if (GetFocus() != GetDlgItem(hwnd_, StartHex)) SetText(hwnd_, StartHex, ColorHex(palette.start));
             if (GetFocus() != GetDlgItem(hwnd_, EndHex)) SetText(hwnd_, EndHex, ColorHex(palette.end));
@@ -535,6 +557,7 @@ void SettingsWindow::UpdateControls() {
         SetText(hwnd_, RecordHotkey, captureSlot_ == -2 ? L"Cancel recording" : L"Record shortcut"); Check(hwnd_, Startup, StartupEnabled());
         Check(hwnd_, StartMinimized, settings.startMinimized);
     } else if (page_ == 4) {
+        SetText(hwnd_, ControllerAppearance, settings.controllerStyle == ControllerStyle::Original ? L"Opacity" : L"Colors");
         Check(hwnd_, ControllerMode, settings.device == OverlayDevice::Controller);
         SendDlgItemMessageW(hwnd_, ControllerScale, TBM_SETPOS, TRUE, settings.controllerScale);
         SetText(hwnd_, ControllerScaleValue, std::to_wstring(settings.controllerScale) + L"%");
@@ -619,6 +642,7 @@ void SettingsWindow::Command(int id, int code) {
         ui.status.clear(); Build(); app_->Changed(); SetFocus(GetDlgItem(hwnd_, id)); return;
     }
     if (id >= AccentFirst && id <= AccentLast) {
+        if (OriginalAppearance(settings, ui.appearanceController)) return;
         if (ui.appearanceController) settings.controllerAccent = Accents[static_cast<size_t>(id - AccentFirst)];
         else settings.accent = Accents[static_cast<size_t>(id - AccentFirst)];
         app_->Changed(); UpdateControls(); return;
@@ -642,6 +666,10 @@ void SettingsWindow::Command(int id, int code) {
         settings.controllerStyle = DefaultSettings().controllerStyle;
         ui.status = L"Controller style reset to Frost.";
         Build(); app_->Changed(); SetFocus(GetDlgItem(hwnd_, ResetControllerStyle)); return;
+    case OriginalSolid: case OriginalTransparent: case ResetOriginalOpacity:
+        if (code != BN_CLICKED || page_ != 0 || !OriginalAppearance(settings, ui.appearanceController)) return;
+        settings.originalOpacity = id == OriginalTransparent ? 55 : 100;
+        ui.status.clear(); app_->Changed(); UpdateControls(); return;
     case PreviewIdle: case PreviewPressed:
         if (code != BN_CLICKED) return;
         ui.previewPressed = id == PreviewPressed; UpdateControls(); return;
@@ -696,6 +724,7 @@ void SettingsWindow::Command(int id, int code) {
         ui.status = L"Gradient colors and fill opacity reset to Sunset."; app_->Changed(); break;
     }
     case BackgroundStart: case BackgroundEnd: case PressedColor: {
+        if (OriginalAppearance(settings, ui.appearanceController)) return;
         if (code != BN_CLICKED) return;
         const auto palette = AppearancePalette(settings, ui.appearanceController);
         COLORREF chosen = id == PressedColor ? AppearanceAccentColor(settings, ui.appearanceController) : id == BackgroundStart ? palette.start : palette.end;
@@ -901,15 +930,16 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wParam,
         break;
     case WM_HSCROLL: {
         const int id = GetDlgCtrlID(reinterpret_cast<HWND>(lParam));
-        if (id == Scale || id == ControllerScale || id == Opacity || id == ControllerDeadzone || id == GradientFillControl) {
+        if (id == Scale || id == ControllerScale || id == Opacity || id == OriginalOpacityControl || id == ControllerDeadzone || id == GradientFillControl) {
             const int value = static_cast<int>(SendMessageW(reinterpret_cast<HWND>(lParam), TBM_GETPOS, 0, 0));
             const int valueId = id == Scale ? ScaleValue : id == ControllerScale ? ControllerScaleValue : id == Opacity ? OpacityValue :
-                id == GradientFillControl ? GradientFillValue : ControllerDeadzoneValue;
+                id == OriginalOpacityControl ? OriginalOpacityValue : id == GradientFillControl ? GradientFillValue : ControllerDeadzoneValue;
             SetText(hwnd, valueId, std::to_wstring(value) + L"%");
-            if (id == GradientFillControl) InvalidateControl(hwnd, OverlayPreview);
+            if (id == GradientFillControl || id == OriginalOpacityControl) InvalidateControl(hwnd, OverlayPreview);
             if (LOWORD(wParam) != TB_THUMBTRACK) {
                 int& setting = id == Scale ? self->app_->settings.scale : id == ControllerScale ? self->app_->settings.controllerScale :
-                    id == Opacity ? self->app_->settings.opacity : id == GradientFillControl ? self->app_->settings.gradientFillOpacity : self->app_->settings.controllerDeadzone;
+                    id == Opacity ? self->app_->settings.opacity : id == OriginalOpacityControl ? self->app_->settings.originalOpacity :
+                    id == GradientFillControl ? self->app_->settings.gradientFillOpacity : self->app_->settings.controllerDeadzone;
                 if (setting != value) { setting = value; self->app_->Changed(); }
                 self->UpdateControls();
             }
@@ -918,7 +948,7 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wParam,
     }
     case WM_NOTIFY: {
         const auto* custom = reinterpret_cast<NMCUSTOMDRAW*>(lParam);
-        if (custom->hdr.code == NM_CUSTOMDRAW && (custom->hdr.idFrom == Scale || custom->hdr.idFrom == ControllerScale || custom->hdr.idFrom == Opacity || custom->hdr.idFrom == ControllerDeadzone || custom->hdr.idFrom == GradientFillControl)) {
+        if (custom->hdr.code == NM_CUSTOMDRAW && (custom->hdr.idFrom == Scale || custom->hdr.idFrom == ControllerScale || custom->hdr.idFrom == Opacity || custom->hdr.idFrom == OriginalOpacityControl || custom->hdr.idFrom == ControllerDeadzone || custom->hdr.idFrom == GradientFillControl)) {
             if (custom->dwDrawStage == CDDS_PREPAINT) return CDRF_NOTIFYITEMDRAW;
             if (custom->dwDrawStage == CDDS_ITEMPREPAINT) {
                 if (custom->dwItemSpec == TBCD_CHANNEL) { Fill(custom->hdc, custom->rc, Border); return CDRF_SKIPDEFAULT; }
@@ -957,6 +987,7 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wParam,
             preview.isoLayout = ui.previewIso;
             if (controller && self->page_ != 4) preview.controllerLayout = ui.previewControllerLayout;
             if (HWND fill = GetDlgItem(hwnd, GradientFillControl)) preview.gradientFillOpacity = static_cast<int>(SendMessageW(fill, TBM_GETPOS, 0, 0));
+            if (HWND opacity = GetDlgItem(hwnd, OriginalOpacityControl)) preview.originalOpacity = static_cast<int>(SendMessageW(opacity, TBM_GETPOS, 0, 0));
             DrawOverlayPreview(item->hDC, item->rcItem, preview, ui.previewPressed, ui.previewLight);
             return TRUE;
         }
@@ -977,6 +1008,8 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wParam,
             (styleCard && static_cast<int>(item->CtlID - StyleFirst) == static_cast<int>(self->app_->settings.style)) ||
             (controllerStyleCard && static_cast<int>(item->CtlID - ControllerStyleFirst) == static_cast<int>(self->app_->settings.controllerStyle)) ||
             (themeCard && static_cast<int>(item->CtlID - ThemeFirst) == static_cast<int>(activeTheme)) ||
+            (item->CtlID == OriginalSolid && self->app_->settings.originalOpacity == 100) ||
+            (item->CtlID == OriginalTransparent && self->app_->settings.originalOpacity == 55) ||
             (item->CtlID == PreviewIdle && !ui.previewPressed) || (item->CtlID == PreviewPressed && ui.previewPressed);
         const bool controllerAppearance = self->page_ == 4 || (self->page_ == 0 && ui.appearanceController);
         const COLORREF accent = GradientAppearance(self->app_->settings, controllerAppearance) ?

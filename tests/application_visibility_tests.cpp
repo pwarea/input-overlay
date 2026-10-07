@@ -259,6 +259,11 @@ void TestControllerAppearance(Harness& harness, HWND allowedWindow) {
                     app.settings.backgroundEnd == RGB(238, 170, 102) && app.settings.gradientFillOpacity == 31 &&
                     app.settings.style == OverlayStyle::Pearl && app.settings.device == OverlayDevice::KeyboardMouse,
                     "Prism HEX and fill edits must apply while retaining keyboard style and live device");
+            } else if (app.settings.controllerStyle == ControllerStyle::Original) {
+                Check(GetDlgItem(window, OriginalOpacityControl) && GetDlgItem(window, OriginalSolid) &&
+                    GetDlgItem(window, OriginalTransparent) && GetDlgItem(window, ResetOriginalOpacity) &&
+                    !GetDlgItem(window, PressedColor) && !GetDlgItem(window, StartHex) && !GetDlgItem(window, GradientFillControl),
+                    "Original must show opacity controls instead of color controls");
             } else {
                 Check(GetDlgItem(window, PressedColor) && !GetDlgItem(window, StartHex) && !GetDlgItem(window, GradientFillControl),
                     "Air and Frost must expose their pressed color without Prism-only controls");
@@ -270,7 +275,8 @@ void TestControllerAppearance(Harness& harness, HWND allowedWindow) {
         Check(app.settings.controllerStyle == ControllerStyle::Frost && app.settings.style == OverlayStyle::Pearl &&
             app.settings.device == OverlayDevice::KeyboardMouse && app.settings.controllerLayout == beforeReset.controllerLayout &&
             app.settings.colorTheme == beforeReset.colorTheme && app.settings.backgroundStart == beforeReset.backgroundStart &&
-            app.settings.backgroundEnd == beforeReset.backgroundEnd && app.settings.gradientFillOpacity == beforeReset.gradientFillOpacity,
+            app.settings.backgroundEnd == beforeReset.backgroundEnd && app.settings.gradientFillOpacity == beforeReset.gradientFillOpacity &&
+            app.settings.opacity == beforeReset.opacity && app.settings.originalOpacity == beforeReset.originalOpacity,
             "Reset style must restore only the controller design while retaining selected layout and custom colors");
         select(AppearanceDevice, 0);
         click(StyleFirst + static_cast<int>(OverlayStyle::Neon));
@@ -293,6 +299,96 @@ void TestControllerAppearance(Harness& harness, HWND allowedWindow) {
     app.Changed();
     click(NavOverlay);
     select(AppearanceDevice, 0);
+}
+
+void TestOriginalOpacity(Harness& harness) {
+    auto& app = harness.app;
+    const Settings original = app.settings;
+    const HWND window = app.preferences.Handle();
+    const auto click = [window](int id) { SendMessageW(window, WM_COMMAND, MAKEWPARAM(id, BN_CLICKED), 0); };
+    const auto slide = [window](int id, int value, int notification = TB_ENDTRACK) {
+        const HWND slider = GetDlgItem(window, id);
+        Check(slider != nullptr, "Opacity slider must exist");
+        SendMessageW(slider, TBM_SETPOS, TRUE, value);
+        SendMessageW(window, WM_HSCROLL, notification, reinterpret_cast<LPARAM>(slider));
+    };
+    app.settings.device = OverlayDevice::KeyboardMouse;
+    app.settings.controllerStyle = ControllerStyle::Frost;
+    app.settings.opacity = 73;
+    app.settings.originalOpacity = 91;
+    app.settings.enabled = false;
+    app.Changed();
+    Focus(window);
+    click(NavController);
+    click(ControllerStyleFirst + static_cast<int>(ControllerStyle::Original));
+    Check(Text(window, ControllerAppearance) == L"Opacity" && app.settings.originalOpacity == 91 && app.settings.opacity == 73 &&
+        app.settings.device == OverlayDevice::KeyboardMouse, "Selecting Original must preserve both opacity preferences and the active device");
+    RECT previous{};
+    for (int id = ControllerStyleFirst; id <= ControllerStyleLast; ++id) {
+        RECT bounds{};
+        Check(GetDlgItem(window, id) && GetWindowRect(GetDlgItem(window, id), &bounds), "All four controller style buttons must exist");
+        Check(id == ControllerStyleFirst || previous.right < bounds.left, "Controller style buttons must not overlap");
+        previous = bounds;
+    }
+    RECT appearance{};
+    GetWindowRect(GetDlgItem(window, ControllerAppearance), &appearance);
+    Check(previous.right < appearance.left, "The fourth controller style must not overlap the opacity button");
+    click(ControllerAppearance);
+    Check(GetDlgItem(window, OriginalOpacityControl) && !GetDlgItem(window, PressedColor) &&
+        SendDlgItemMessageW(window, OriginalOpacityControl, TBM_GETRANGEMIN, 0, 0) == 15 &&
+        SendDlgItemMessageW(window, OriginalOpacityControl, TBM_GETRANGEMAX, 0, 0) == 100 &&
+        Text(window, OriginalOpacityValue) == L"91%", "Original opacity editor must restore its own value and expose the full range");
+    RECT reset{}, solid{}, transparent{}, slider{}, status{};
+    GetWindowRect(GetDlgItem(window, ResetOriginalOpacity), &reset);
+    GetWindowRect(GetDlgItem(window, OriginalSolid), &solid);
+    GetWindowRect(GetDlgItem(window, OriginalTransparent), &transparent);
+    GetWindowRect(GetDlgItem(window, OriginalOpacityControl), &slider);
+    GetWindowRect(GetDlgItem(window, Status), &status);
+    Check(reset.bottom < solid.top && solid.right < transparent.left && solid.bottom < slider.top && slider.bottom < status.top,
+        "Original opacity presets, slider and footer must not overlap");
+    const std::string beforeDrag = ReadConfiguration(app.configPath);
+    slide(OriginalOpacityControl, 34, TB_THUMBTRACK);
+    Check(app.settings.originalOpacity == 91 && app.settings.opacity == 73 && Text(window, OriginalOpacityValue) == L"34%" &&
+        ReadConfiguration(app.configPath) == beforeDrag, "Dragging Original opacity must preview without saving partial values");
+    slide(OriginalOpacityControl, 34);
+    Check(app.settings.originalOpacity == 34 && app.settings.opacity == 73,
+        "Releasing Original opacity must update only its independent preference");
+    click(OriginalTransparent);
+    Check(app.settings.originalOpacity == 55 && Text(window, OriginalOpacityValue) == L"55%" && app.settings.opacity == 73,
+        "Transparent preset must set only Original opacity to 55 percent");
+    click(OriginalSolid);
+    Check(app.settings.originalOpacity == 100 && Text(window, OriginalOpacityValue) == L"100%",
+        "Solid preset must set Original opacity to 100 percent");
+    for (const int value : {15, 100, 48}) {
+        slide(OriginalOpacityControl, value);
+        Settings saved;
+        Check(LoadSettings(app.configPath, saved) && saved.controllerStyle == ControllerStyle::Original &&
+            saved.originalOpacity == value && saved.opacity == 73 && !saved.enabled && saved.onlySelectedApps &&
+            saved.applications == original.applications && saved.device == OverlayDevice::KeyboardMouse,
+            "Original opacity must persist without changing global opacity, device, visibility or filters");
+        harness.Expect(false, false, "Original opacity changes must preserve filtering and manual hide");
+    }
+    click(ResetOriginalOpacity);
+    Check(app.settings.originalOpacity == 100 && app.settings.opacity == 73 && app.settings.controllerStyle == ControllerStyle::Original,
+        "Reset opacity must restore only Original opacity to solid");
+    slide(OriginalOpacityControl, 55);
+    click(ResetControllerStyle);
+    Check(app.settings.controllerStyle == ControllerStyle::Frost && app.settings.originalOpacity == 55 && app.settings.opacity == 73 &&
+        GetDlgItem(window, PressedColor) && !GetDlgItem(window, OriginalOpacityControl),
+        "Reset style must restore Frost while retaining independent opacity values");
+    click(ControllerStyleFirst + static_cast<int>(ControllerStyle::Original));
+    Check(Text(window, OriginalOpacityValue) == L"55%", "Returning to Original must restore its previous opacity");
+    click(NavLayout);
+    slide(Opacity, 62);
+    Check(app.settings.opacity == 62 && app.settings.originalOpacity == 55,
+        "The Layout opacity slider must retain its existing scope while Original is selected");
+    click(NavController);
+    click(ControllerStyleFirst + static_cast<int>(ControllerStyle::Prism));
+    Check(Text(window, ControllerAppearance) == L"Colors" && app.settings.originalOpacity == 55 && app.settings.opacity == 62,
+        "Other controller styles must restore Colors and preserve both opacity values");
+    app.settings = original;
+    app.Changed();
+    click(NavOverlay);
 }
 
 void TestControllerInputSelection(Harness& harness) {
@@ -491,38 +587,41 @@ void TestControllerEdgePosition(Harness& harness) {
     app.settings.device = OverlayDevice::Controller;
     app.settings.enabled = false;
     const RECT screen = MonitorFor(app.settings).rcMonitor;
-    for (int layout = 0; layout < ControllerLayoutCount; ++layout) {
-        app.settings.controllerLayout = static_cast<ControllerLayout>(layout);
-        for (const int scale : {10, 100, 157, 200}) {
-            app.settings.controllerScale = scale;
-            harness.BeginPreview();
-            const SIZE size = OverlaySize(app.settings);
-            Check(size.cx < OverlaySize(scale).cx, "Controller drag area must exclude the keyboard canvas padding");
-            app.SetPosition(screen.left, screen.bottom - size.cy);
-            app.overlay.Render(ResolvedSettings(app.settings), app.pressed, app.controllerState);
-            RECT placed{};
-            Check(GetWindowRect(app.overlay.Handle(), &placed) != FALSE &&
-                placed.left == screen.left && placed.bottom == screen.bottom &&
-                placed.right - placed.left == size.cx && placed.bottom - placed.top == size.cy,
-                "Every controller layout must remain at the bottom-left screen edge after a move");
-            Settings saved;
-            Check(LoadSettings(app.configPath, saved) && saved.x == 0 && saved.y == 0 &&
-                !saved.anchorRight && saved.anchorBottom && !saved.enabled && saved.onlySelectedApps &&
-                saved.applications == original.applications,
-                "Moving a controller to the screen edge must persist zero margins and preserve visibility preferences");
-            const POINT restored = AnchoredPosition(saved, screen);
-            Check(restored.x == placed.left && restored.y == placed.top,
-                "Reloading controller position must not restore the old transparent padding");
-            Focus(harness.outside);
-            app.UpdateVisibility();
-            harness.Expect(false, false, "Leaving Settings after a controller move must end editing and restore manual hide");
-            Check((GetWindowLongPtrW(app.overlay.Handle(), GWL_EXSTYLE) & WS_EX_TRANSPARENT) != 0,
-                "Finishing controller positioning must restore click-through");
-            app.overlay.Render(ResolvedSettings(app.settings), app.pressed, app.controllerState);
-            RECT afterEditing{};
-            GetWindowRect(app.overlay.Handle(), &afterEditing);
-            Check(EqualRect(&placed, &afterEditing) != FALSE,
-                "Leaving controller move mode must not change the cropped window position or size");
+    for (const auto style : {ControllerStyle::Frost, ControllerStyle::Original}) {
+        app.settings.controllerStyle = style;
+        for (int layout = 0; layout < ControllerLayoutCount; ++layout) {
+            app.settings.controllerLayout = static_cast<ControllerLayout>(layout);
+            for (const int scale : {10, 100, 157, 200}) {
+                app.settings.controllerScale = scale;
+                harness.BeginPreview();
+                const SIZE size = OverlaySize(app.settings);
+                Check(size.cx < OverlaySize(scale).cx, "Controller drag area must exclude the keyboard canvas padding");
+                app.SetPosition(screen.left, screen.bottom - size.cy);
+                app.overlay.Render(ResolvedSettings(app.settings), app.pressed, app.controllerState);
+                RECT placed{};
+                Check(GetWindowRect(app.overlay.Handle(), &placed) != FALSE &&
+                    placed.left == screen.left && placed.bottom == screen.bottom &&
+                    placed.right - placed.left == size.cx && placed.bottom - placed.top == size.cy,
+                    "Every controller layout must remain at the bottom-left screen edge after a move");
+                Settings saved;
+                Check(LoadSettings(app.configPath, saved) && saved.x == 0 && saved.y == 0 &&
+                    !saved.anchorRight && saved.anchorBottom && !saved.enabled && saved.onlySelectedApps &&
+                    saved.applications == original.applications,
+                    "Moving a controller to the screen edge must persist zero margins and preserve visibility preferences");
+                const POINT restored = AnchoredPosition(saved, screen);
+                Check(restored.x == placed.left && restored.y == placed.top,
+                    "Reloading controller position must not restore the old transparent padding");
+                Focus(harness.outside);
+                app.UpdateVisibility();
+                harness.Expect(false, false, "Leaving Settings after a controller move must end editing and restore manual hide");
+                Check((GetWindowLongPtrW(app.overlay.Handle(), GWL_EXSTYLE) & WS_EX_TRANSPARENT) != 0,
+                    "Finishing controller positioning must restore click-through");
+                app.overlay.Render(ResolvedSettings(app.settings), app.pressed, app.controllerState);
+                RECT afterEditing{};
+                GetWindowRect(app.overlay.Handle(), &afterEditing);
+                Check(EqualRect(&placed, &afterEditing) != FALSE,
+                    "Leaving controller move mode must not change the cropped window position or size");
+            }
         }
     }
     app.settings = original;
@@ -612,6 +711,7 @@ void RunTests() {
         app.settings.accent == beforeGradient.accent && app.settings.isoLayout == beforeGradient.isoLayout,
         "Gradient editing and reset must preserve application restrictions, visibility, layout, position, size, overall opacity, and pressed accent");
     TestControllerAppearance(harness, allowed.window);
+    TestOriginalOpacity(harness);
     TestControllerInputSelection(harness);
     TestIndependentSizes(harness, allowed.window);
     TestControllerEdgePosition(harness);

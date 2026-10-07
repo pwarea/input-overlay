@@ -218,19 +218,21 @@ void TestControllerScale(const TemporaryDirectory& temp) {
 
 void TestControllerViewport() {
     const RECT screens[] = {{0, 0, 1920, 1080}, {0, 0, 1280, 720}, {-1920, -200, 0, 880}};
-    for (int model = 0; model < input_overlay::ControllerLayoutCount; ++model) {
+    for (int model = 0; model < input_overlay::ControllerLayoutCount; ++model)
+        for (int style = 0; style < input_overlay::ControllerStyleCount; ++style) {
         auto settings = input_overlay::DefaultSettings();
         settings.device = input_overlay::OverlayDevice::Controller;
         settings.controllerLayout = static_cast<input_overlay::ControllerLayout>(model);
+        settings.controllerStyle = static_cast<input_overlay::ControllerStyle>(style);
         for (int scale = 10; scale <= 200; ++scale) {
             settings.controllerScale = scale;
-            const SIZE legacy = input_overlay::OverlaySize(scale);
+            const SIZE canvas = input_overlay::OverlayCanvasSize(settings);
             const RECT viewport = input_overlay::OverlayViewport(settings);
             const SIZE size = input_overlay::OverlaySize(settings);
-            Check(viewport.left >= 0 && viewport.top >= 0 && viewport.right <= legacy.cx && viewport.bottom <= legacy.cy &&
+            Check(viewport.left >= 0 && viewport.top >= 0 && viewport.right <= canvas.cx && viewport.bottom <= canvas.cy &&
                 size.cx == viewport.right - viewport.left && size.cy == viewport.bottom - viewport.top && size.cx > 0 && size.cy > 0,
-                "Every controller model and scale must have a nonempty crop inside the original drawing canvas");
-            Check(size.cx < legacy.cx,
+                "Every controller model, style and scale must have a nonempty crop inside its drawing canvas");
+            Check(size.cx < canvas.cx,
                 "Controller windows must discard the unused keyboard canvas width at every supported scale");
             for (const bool right : {false, true}) for (const bool bottom : {false, true}) {
                 settings.anchorRight = right;
@@ -257,13 +259,16 @@ void TestControllerViewport() {
             }
         }
     }
-    for (int scale = 10; scale <= 200; ++scale) {
+    for (int style = 0; style < input_overlay::ControllerStyleCount; ++style)
+        for (int scale = 10; scale <= 200; ++scale) {
         auto settings = input_overlay::DefaultSettings();
+        settings.controllerStyle = static_cast<input_overlay::ControllerStyle>(style);
         settings.scale = scale;
         const SIZE legacy = input_overlay::OverlaySize(scale), current = input_overlay::OverlaySize(settings);
+        const SIZE canvas = input_overlay::OverlayCanvasSize(settings);
         const RECT viewport = input_overlay::OverlayViewport(settings);
         Check(viewport.left == 0 && viewport.top == 0 && viewport.right == legacy.cx && viewport.bottom == legacy.cy &&
-            current.cx == legacy.cx && current.cy == legacy.cy,
+            current.cx == legacy.cx && current.cy == legacy.cy && canvas.cx == legacy.cx && canvas.cy == legacy.cy,
             "The controller crop must leave keyboard and mouse canvas dimensions unchanged");
     }
 }
@@ -756,7 +761,7 @@ void TestControllerStyles(const TemporaryDirectory& temp) {
             restored.style == input_overlay::OverlayStyle::Gradient && restored.applications == settings.applications,
             "Saved invalid controller designs must recover to Frost and retain application restrictions");
     }
-    for (const char* invalid : {"-2147483648", "-1", "3", "2147483647", "2147483648", "-2147483649", "1.5", "invalid", ""}) {
+    for (const char* invalid : {"-2147483648", "-1", "4", "2147483647", "2147483648", "-2147483649", "1.5", "invalid", ""}) {
         WriteBytes(file, std::string("[General]\nstyle=5\ndevice=1\ncontrollerLayout=1\nenabled=0\nonlySelectedApps=1\n") +
             "controllerStyle=2\ncontrollerStyle=" + invalid + "\nscale=75\n");
         Check(input_overlay::LoadSettings(file, settings) && settings.controllerStyle == input_overlay::ControllerStyle::Frost &&
@@ -775,6 +780,99 @@ void TestControllerStyles(const TemporaryDirectory& temp) {
             !settings.enabled && settings.onlySelectedApps && settings.startMinimized && settings.scale == 75,
             "Existing settings without a controller design must gain Frost while preserving their saved mode and preferences");
     }
+}
+
+void TestOriginalOpacity(const TemporaryDirectory& temp) {
+    const auto file = temp.File(L"original-opacity.ini");
+    auto settings = input_overlay::DefaultSettings();
+    Check(settings.originalOpacity == 100 && settings.opacity == 92 && settings.controllerStyle == input_overlay::ControllerStyle::Frost,
+        "Original must default to solid without changing the existing style or shared opacity defaults");
+    Check(static_cast<int>(input_overlay::ControllerStyle::Air) == 0 && static_cast<int>(input_overlay::ControllerStyle::Frost) == 1 &&
+        static_cast<int>(input_overlay::ControllerStyle::Prism) == 2 && static_cast<int>(input_overlay::ControllerStyle::Original) == 3,
+        "Original must append its saved style ID without reinterpreting existing controller designs");
+    settings.opacity = 27;
+    settings.enabled = false;
+    settings.onlySelectedApps = true;
+    settings.startMinimized = true;
+    settings.applications = {temp.File(L"Absent Game\\game.exe")};
+    settings.controllerScale = 157;
+    settings.scale = 63;
+    settings.x = 41;
+    settings.y = 29;
+    settings.controllerAccent = RGB(194, 82, 63);
+    settings.backgroundStart = RGB(29, 49, 79);
+    settings.backgroundEnd = RGB(251, 133, 72);
+    for (const auto device : {input_overlay::OverlayDevice::KeyboardMouse, input_overlay::OverlayDevice::Controller})
+        for (int style = 0; style < input_overlay::ControllerStyleCount; ++style)
+            for (const int opacity : {15, 55, 100}) {
+                settings.device = device;
+                settings.controllerStyle = static_cast<input_overlay::ControllerStyle>(style);
+                settings.originalOpacity = opacity;
+                const bool original = device == input_overlay::OverlayDevice::Controller &&
+                    settings.controllerStyle == input_overlay::ControllerStyle::Original;
+                Check(input_overlay::EffectiveOverlayOpacity(settings) == (original ? opacity : 27),
+                    "Only the active Original controller may use the independent solid or transparent setting");
+                Check(input_overlay::SaveSettings(file, settings), "Original opacity must save with every selected device and style");
+                input_overlay::Settings restored;
+                Check(input_overlay::LoadSettings(file, restored) && restored.originalOpacity == opacity && restored.opacity == 27 &&
+                    restored.controllerStyle == settings.controllerStyle && restored.device == device &&
+                    input_overlay::EffectiveOverlayOpacity(restored) == (original ? opacity : 27),
+                    "Original and shared opacities must round trip independently across device and style changes");
+                Check(restored.x == 41 && restored.y == 29 && restored.scale == 63 && restored.controllerScale == 157 &&
+                    !restored.enabled && restored.onlySelectedApps && restored.startMinimized &&
+                    restored.applications == settings.applications && restored.controllerAccent == settings.controllerAccent &&
+                    restored.backgroundStart == settings.backgroundStart && restored.backgroundEnd == settings.backgroundEnd,
+                    "Original opacity must preserve position, independent sizes, hidden state, application filters and saved colors");
+            }
+    for (const int value : {INT_MIN, -1, 0, 14, 15, 55, 100, 101, INT_MAX}) {
+        settings.originalOpacity = value;
+        auto normalized = settings;
+        input_overlay::NormalizeSettings(normalized);
+        const int expected = std::clamp(value, 15, 100);
+        Check(normalized.originalOpacity == expected && normalized.opacity == 27,
+            "Original opacity normalization must clamp independently to its visible range");
+        Check(input_overlay::SaveSettings(file, settings) && settings.originalOpacity == value,
+            "Saving Original opacity must normalize a copy without mutating the live settings");
+        input_overlay::Settings restored;
+        Check(input_overlay::LoadSettings(file, restored) && restored.originalOpacity == expected && restored.opacity == 27,
+            "Saved out-of-range Original opacity must reload safely without changing shared opacity");
+        WriteBytes(file, "[General]\npositionVersion=2\ndevice=1\ncontrollerStyle=3\nopacity=27\noriginalOpacity=" + std::to_string(value) + "\n");
+        Check(input_overlay::LoadSettings(file, restored) && restored.originalOpacity == expected && restored.opacity == 27,
+            "Stored numeric Original opacity must clamp to the same range as in-memory settings");
+    }
+    for (const char* invalid : {"2147483648", "-2147483649", "55.5", "invalid", ""}) {
+        WriteBytes(file, std::string("[General]\npositionVersion=2\ndevice=1\ncontrollerStyle=3\nopacity=27\n") +
+            "originalOpacity=55\noriginalOpacity=" + invalid + "\nenabled=0\nonlySelectedApps=1\n");
+        Check(input_overlay::LoadSettings(file, settings) && settings.originalOpacity == 100 && settings.opacity == 27 &&
+            input_overlay::EffectiveOverlayOpacity(settings) == 100 && !settings.enabled && settings.onlySelectedApps,
+            "Malformed explicit Original opacity must restore solid while preserving shared opacity and visibility restrictions");
+    }
+    for (int style = 0; style < input_overlay::ControllerStyleCount; ++style) {
+        WriteBytes(file, "[General]\npositionVersion=2\ndevice=1\ncontrollerStyle=" + std::to_string(style) +
+            "\nopacity=27\nx=41\ny=29\nenabled=0\nonlySelectedApps=1\n");
+        Check(input_overlay::LoadSettings(file, settings) && settings.originalOpacity == 100 && settings.opacity == 27 &&
+            static_cast<int>(settings.controllerStyle) == style && settings.x == 41 && settings.y == 29 &&
+            !settings.enabled && settings.onlySelectedApps,
+            "Existing settings must gain solid Original opacity without replacing any saved style or placement");
+        const auto originalStyle = settings.controllerStyle;
+        settings.controllerStyle = input_overlay::ControllerStyle::Original;
+        Check(input_overlay::EffectiveOverlayOpacity(settings) == 100,
+            "Selecting Original for the first time must be fully opaque even when a previous style was transparent");
+        settings.controllerStyle = originalStyle;
+        Check(settings.opacity == 27 && settings.originalOpacity == 100,
+            "Switching back from Original must retain the previous shared opacity");
+    }
+    for (const bool reversed : {false, true}) {
+        const std::string values = reversed ? "originalOpacity=55\nopacity=27\n" : "opacity=27\noriginalOpacity=55\n";
+        WriteBytes(file, "[General]\npositionVersion=2\ndevice=1\ncontrollerStyle=3\n" + values);
+        Check(input_overlay::LoadSettings(file, settings) && settings.originalOpacity == 55 && settings.opacity == 27 &&
+            input_overlay::EffectiveOverlayOpacity(settings) == 55,
+            "An explicit Original transparency preference must survive regardless of settings key order");
+    }
+    settings.originalOpacity = 55;
+    Check(!input_overlay::LoadSettings(temp.File(L"new-original-opacity.ini"), settings) && settings.originalOpacity == 100 &&
+        settings.opacity == 92 && settings.controllerStyle == input_overlay::ControllerStyle::Frost,
+        "Missing settings must reset Original opacity to solid while retaining existing installation defaults");
 }
 
 void TestControllerAccent(const TemporaryDirectory& temp) {
@@ -955,6 +1053,7 @@ int main() {
         TestStartupState(temp);
         TestControllerSettings(temp);
         TestControllerStyles(temp);
+        TestOriginalOpacity(temp);
         TestControllerAccent(temp);
         TestUpdatePreferences(temp);
         TestMalformed(temp);
