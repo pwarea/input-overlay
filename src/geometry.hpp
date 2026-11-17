@@ -1,5 +1,6 @@
 #pragma once
 #include "app.hpp"
+#include "keyboard_layout.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -10,6 +11,13 @@ inline SIZE OverlaySize(int scale) {
 }
 inline SIZE OverlayCanvasSize(const Settings& s) {
     const int percent = std::clamp(EffectiveOverlayScale(s), 10, 200);
+    if (s.device == OverlayDevice::KeyboardMouse && s.keyboardForm != KeyboardForm::Gaming) {
+        const SIZE design = KeyboardDesignSize(s);
+        const float scale = static_cast<float>(percent) / 100.0f *
+            static_cast<float>(OverlayBaseWidth) / static_cast<float>(OverlayDesignWidth);
+        return {static_cast<LONG>(std::ceil(design.cx * scale)),
+                static_cast<LONG>(std::ceil(design.cy * scale))};
+    }
     if (s.device != OverlayDevice::Controller || s.controllerStyle != ControllerStyle::Original)
         return OverlaySize(percent);
     const float scale = static_cast<float>(percent) / 100.0f *

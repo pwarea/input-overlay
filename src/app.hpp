@@ -18,7 +18,7 @@
 #include "updates.hpp"
 
 #ifndef INPUT_OVERLAY_VERSION
-#define INPUT_OVERLAY_VERSION "0.4.2"
+#define INPUT_OVERLAY_VERSION "0.5.0"
 #endif
 #define INPUT_OVERLAY_WIDEN_IMPL(value) L##value
 #define INPUT_OVERLAY_WIDEN(value) INPUT_OVERLAY_WIDEN_IMPL(value)
@@ -36,8 +36,9 @@ constexpr UINT WM_APP_SHOW_SETTINGS = WM_APP + 4;
 constexpr int InputNone = 0;
 constexpr int MouseLeft = 256, MouseRight = 257, MouseMiddle = 258;
 constexpr int MouseSide1 = 259, MouseSide2 = 260, WheelUp = 261, WheelDown = 262;
-constexpr size_t InputCount = 263;
-constexpr size_t KeyboardCount = 28, SlotCount = 35;
+constexpr int NumpadEnter = 263;
+constexpr size_t InputCount = 264;
+constexpr size_t KeyboardCount = 28, MouseSlotFirst = 28, MouseSlotCount = 7, LegacySlotCount = 35, SlotCount = 112;
 constexpr int OverlayDesignWidth = 510, OverlayDesignHeight = 220;
 constexpr int OverlayBaseWidth = 357, OverlayBaseHeight = 154;
 enum class OverlayStyle { Outline = 0, Neon = 1, Glass = 2, Circuit = 3, Pearl = 4, Gradient = 5 };
@@ -45,6 +46,8 @@ constexpr int OverlayStyleCount = 6;
 enum class ColorTheme { Original = 0, Sunset = 1, Aurora = 2, Ocean = 3, Rose = 4, Custom = 5 };
 constexpr int ColorThemeCount = 6;
 enum class OverlayDevice { KeyboardMouse = 0, Controller = 1 };
+enum class KeyboardForm { Gaming = 0, Compact = 1, Tkl = 2, FullSize = 3 };
+constexpr int KeyboardFormCount = 4;
 enum class ControllerLayout { Xbox = 0, PlayStation = 1, DualShock4 = 2 };
 constexpr int ControllerLayoutCount = 3;
 enum class ControllerStyle { Air = 0, Frost = 1, Prism = 2, Original = 3 };
@@ -64,6 +67,7 @@ struct Settings {
     int gradientFillOpacity = 16;
     OverlayStyle style = OverlayStyle::Pearl;
     OverlayDevice device = OverlayDevice::KeyboardMouse;
+    KeyboardForm keyboardForm = KeyboardForm::Gaming;
     ControllerLayout controllerLayout = ControllerLayout::Xbox;
     ControllerStyle controllerStyle = ControllerStyle::Frost;
     int originalOpacity = 100;

@@ -36,6 +36,10 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Controller renderer test compilation failed.' }
         & './build/controller_render_tests.exe'
         if ($LASTEXITCODE -ne 0) { throw 'Controller renderer tests failed.' }
+        & $Zig c++ @common tests/keyboard_render_tests.cpp src/config.cpp -luser32 -lgdi32 -lgdiplus -ladvapi32 -ldwmapi -o build/keyboard_render_tests.exe
+        if ($LASTEXITCODE -ne 0) { throw 'Keyboard renderer test compilation failed.' }
+        & './build/keyboard_render_tests.exe'
+        if ($LASTEXITCODE -ne 0) { throw 'Keyboard renderer tests failed.' }
         & $Zig c++ @common tests/application_visibility_tests.cpp src/config.cpp src/color_picker.cpp src/overlay.cpp src/injected_input.cpp src/controller.cpp src/dualshock4.cpp src/updates.cpp src/update_install.cpp -luser32 -lgdi32 -lgdiplus -lcomctl32 -lshell32 -ladvapi32 -ldwmapi -lwtsapi32 -luxtheme -lwinhttp -lbcrypt -lhid -lsetupapi -o build/application_visibility_tests.exe
         if ($LASTEXITCODE -ne 0) { throw 'Application visibility test compilation failed.' }
         & './build/application_visibility_tests.exe'

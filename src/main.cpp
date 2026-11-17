@@ -1,6 +1,8 @@
 #include "app.hpp"
 #include "geometry.hpp"
 #include "injected_input.hpp"
+#include "keyboard_input.hpp"
+#include "keyboard_layout.hpp"
 #include "update_install.hpp"
 #include <shellapi.h>
 #include <commctrl.h>
@@ -131,7 +133,9 @@ int Application::Run() {
         const HWND window = preferences.Handle();
         if (window && (message.hwnd == window || IsChild(window, message.hwnd)) &&
             message.message >= WM_KEYFIRST && message.message <= WM_KEYLAST) {
-            const bool capturedKey = captureIgnoreKey_ && message.wParam == captureIgnoreKey_;
+            const bool keyTransition = message.message == WM_KEYDOWN || message.message == WM_KEYUP ||
+                message.message == WM_SYSKEYDOWN || message.message == WM_SYSKEYUP;
+            const bool capturedKey = keyTransition && IsCapturedKeyboardMessage(captureIgnoreKey_, message.wParam, message.lParam);
             if (capturedKey && (message.message == WM_KEYUP || message.message == WM_SYSKEYUP)) captureIgnoreKey_ = 0;
             if (preferences.Capturing() || capturedKey) continue;
         }
@@ -317,30 +321,32 @@ void Application::Input(int code, bool down) {
     if (pressed[code] == down) return;
     pressed[code] = down;
     if (down && preferences.Capturing()) {
-        if (code < 256) captureIgnoreKey_ = static_cast<UINT>(code);
+        if (code < 256 || code == NumpadEnter) captureIgnoreKey_ = static_cast<UINT>(code);
         preferences.CaptureInput(code);
         return;
     }
     if (visible_ && settings.device == OverlayDevice::KeyboardMouse) {
-        for (const auto& slot : settings.slots) if (slot.visible && slot.input == code) { RequestRender(); break; }
+        for (size_t i = 0; i < SlotCount; ++i) if (settings.slots[i].visible && settings.slots[i].input == code) {
+            const bool mouse = i >= MouseSlotFirst && i < MouseSlotFirst + MouseSlotCount;
+            if (mouse ? settings.showMouse : IsKeyboardSlotPresent(settings, i))
+                RequestRender();
+            break;
+        }
     }
 }
 
 void Application::DeviceInput(HANDLE deviceHandle, int code, bool down) {
-        if (code <= 0 || code >= static_cast<int>(InputCount)) return;
-        deviceInputs_[deviceHandle][code] = down;
-        int output = code;
-        if (code == VK_LSHIFT || code == VK_RSHIFT) output = VK_SHIFT;
-        if (code == VK_LCONTROL || code == VK_RCONTROL) output = VK_CONTROL;
-        if (code == VK_LMENU || code == VK_RMENU) output = VK_MENU;
-        bool held = false;
-        for (const auto& device : deviceInputs_) {
-            if (output == VK_SHIFT) held |= device.second[VK_LSHIFT] || device.second[VK_RSHIFT];
-            else if (output == VK_CONTROL) held |= device.second[VK_LCONTROL] || device.second[VK_RCONTROL];
-            else if (output == VK_MENU) held |= device.second[VK_LMENU] || device.second[VK_RMENU];
-            else held |= device.second[output];
-        }
-        Input(output, held);
+    if (code <= 0 || code >= static_cast<int>(InputCount)) return;
+    deviceInputs_[deviceHandle][code] = down;
+    const int family = ModifierFamily(code);
+    bool held = false, familyHeld = false;
+    for (const auto& device : deviceInputs_) {
+        held |= device.second[code];
+        if (family) familyHeld |= device.second[family] || device.second[ModifierLeft(family)] || device.second[ModifierRight(family)];
+    }
+    const bool capturing = down && preferences.Capturing();
+    Input(code, family == code ? familyHeld : held);
+    if (!capturing && family && family != code) Input(family, familyHeld);
 }
 
 void Application::RawInput(HRAWINPUT handle) {
@@ -355,12 +361,8 @@ void Application::RawInput(HRAWINPUT handle) {
     };
     if (raw.header.dwType == RIM_TYPEKEYBOARD) {
         const auto& key = raw.data.keyboard;
-        UINT vk = key.VKey;
-        if (vk == 255 || vk == 0) return;
-        if (vk == VK_SHIFT) vk = MapVirtualKeyW(key.MakeCode, MAPVK_VSC_TO_VK_EX);
-        if (vk == VK_CONTROL) vk = key.Flags & RI_KEY_E0 ? VK_RCONTROL : VK_LCONTROL;
-        if (vk == VK_MENU) vk = key.Flags & RI_KEY_E0 ? VK_RMENU : VK_LMENU;
-        event(vk, !(key.Flags & RI_KEY_BREAK));
+        const int input = NormalizeKeyboardInput(key.VKey, key.MakeCode, (key.Flags & RI_KEY_E0) != 0, (key.Flags & RI_KEY_E1) != 0);
+        if (input != InputNone) event(input, !(key.Flags & RI_KEY_BREAK));
     } else {
         const USHORT flags = raw.data.mouse.usButtonFlags;
         constexpr USHORT downs[] = {RI_MOUSE_LEFT_BUTTON_DOWN, RI_MOUSE_RIGHT_BUTTON_DOWN,

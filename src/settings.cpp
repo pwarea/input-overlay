@@ -2,6 +2,7 @@
 #include "updates.hpp"
 #include "colors.hpp"
 #include "color_picker.hpp"
+#include "keyboard_layout.hpp"
 #include <commctrl.h>
 #include <uxtheme.h>
 #include <dwmapi.h>
@@ -20,7 +21,8 @@ enum ControlId {
     NavOverlay = 100, NavBindings, NavApplications, NavGeneral, NavController, NavUpdates, NavLayout,
     Enabled = 200, MouseVisible, Scale, ScaleValue, Opacity, OpacityValue,
     MoveOverlay, Layout, ResetPosition, OpenLayout, AccentFirst = 220, AccentLast = 224, StyleFirst = 230, StyleLast = StyleFirst + OverlayStyleCount - 1,
-    OverlayPreview = 240, PreviewIdle, PreviewPressed, PreviewBackground, PreviewLayout, AppearanceDevice,
+    OverlayPreview = 240, PreviewIdle, PreviewPressed, PreviewBackground, PreviewLayout, AppearanceDevice, OpenKeyboardLayout,
+    KeyboardFormFirst = 260, KeyboardFormLast = KeyboardFormFirst + KeyboardFormCount - 1,
     SlotList = 300, SlotTitle, SlotVisible, LabelEdit, SaveLabel, InputValue, RecordInput, UnbindInput, ResetBinding,
     RestrictApps = 400, WindowList, RefreshWindows, AddWindow, AllowedList, RemoveApp, WindowPath,
     HotkeyValue = 500, ModCtrl, ModAlt, ModShift, ModWin, RecordHotkey, Startup, StartMinimized,
@@ -36,6 +38,7 @@ enum ControlId {
 const std::array<COLORREF, 5> Accents{{RGB(125, 211, 252), RGB(167, 139, 250), RGB(110, 231, 183), RGB(251, 191, 36), RGB(251, 113, 133)}};
 const wchar_t* StyleNames[] = {L"Outline", L"Neon", L"Glass", L"Circuit", L"Pearl", L"Gradient"};
 const wchar_t* ControllerStyleNames[] = {L"Air", L"Frost", L"Prism", L"Original"};
+const wchar_t* KeyboardFormNames[] = {L"Gaming", L"60%", L"80% (TKL)", L"Full size"};
 const wchar_t* ThemeNames[] = {L"Original", L"Sunset", L"Aurora", L"Ocean", L"Rose", L"Custom"};
 const wchar_t* PageTitles[] = {L"Overlay", L"Bindings", L"Applications", L"General", L"Controller", L"Updates", L"Layout"};
 const wchar_t* PageSubtitles[] = {
@@ -174,9 +177,7 @@ void InvalidateControl(HWND window, int id) {
     if (HWND control = GetDlgItem(window, id)) InvalidateRect(control, nullptr, FALSE);
 }
 std::wstring SlotName(size_t slot) {
-    if (slot < KeyboardCount) return DefaultSettings().slots[slot].label + L" key";
-    static const wchar_t* names[] = {L"Mouse left", L"Mouse right", L"Mouse middle", L"Mouse side 1", L"Mouse side 2", L"Wheel up", L"Wheel down"};
-    return names[slot - KeyboardCount];
+    return slot < SlotCount ? KeyboardSlotDefinitions()[slot].name : L"";
 }
 std::wstring FileName(const std::wstring& path) {
     const size_t slash = path.find_last_of(L"\\/"); return slash == std::wstring::npos ? path : path.substr(slash + 1);
@@ -360,7 +361,10 @@ void SettingsWindow::Build() {
             text(L"Choose any color or enter its HEX code.", 451, 553, 343, 40, 0, true, ui.smallFont);
         }
     } else if (page_ == 1) {
-        text(L"Display position", 216, 113, 205, 24, 0, true); list(216, 145, 211, 418, SlotList);
+        const std::wstring layoutName = std::wstring(KeyboardFormNames[static_cast<int>(app_->settings.keyboardForm)]) +
+            (app_->settings.isoLayout ? L" \u00b7 ISO" : L" \u00b7 ANSI");
+        text(layoutName.c_str(), 216, 113, 211, 24, 0, true); list(216, 145, 211, 418, SlotList);
+        button(L"Change keyboard layout", 216, 575, 211, 30, OpenKeyboardLayout);
         text(L"", 452, 113, 342, 28, SlotTitle, false, ui.heading);
         checkbox(L"Show this element", 452, 154, 334, SlotVisible);
         text(L"Display label", 452, 208, 330, 24, 0, true);
@@ -455,21 +459,23 @@ void SettingsWindow::Build() {
         HWND layout = add(L"COMBOBOX", L"Keyboard layout", WS_TABSTOP | CBS_DROPDOWNLIST, 498, 160, 296, 120, Layout);
         SendMessageW(layout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"ANSI"));
         SendMessageW(layout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"ISO"));
-        text(L"Keyboard size", 216, 231, 188, 24, 0, false, ui.heading);
-        text(L"", 424, 231, 80, 24, ScaleValue, true);
-        HWND scale = add(TRACKBAR_CLASSW, L"Keyboard and mouse size", WS_TABSTOP | TBS_HORZ | TBS_NOTICKS, 208, 263, 280, 34, Scale);
+        for (int form = 0; form < KeyboardFormCount; ++form)
+            button(KeyboardFormNames[form], 216 + form * 147, 203, 137, 36, KeyboardFormFirst + form);
+        text(L"Keyboard size", 216, 275, 188, 24, 0, false, ui.heading);
+        text(L"", 424, 275, 80, 24, ScaleValue, true);
+        HWND scale = add(TRACKBAR_CLASSW, L"Keyboard and mouse size", WS_TABSTOP | TBS_HORZ | TBS_NOTICKS, 208, 307, 280, 34, Scale);
         SendMessageW(scale, TBM_SETRANGE, TRUE, MAKELPARAM(10, 200)); SendMessageW(scale, TBM_SETPAGESIZE, 0, 10);
-        text(L"Overall opacity", 516, 231, 188, 24, 0, false, ui.heading);
-        text(L"", 724, 231, 70, 24, OpacityValue, true);
-        HWND opacity = add(TRACKBAR_CLASSW, L"Overlay opacity", WS_TABSTOP | TBS_HORZ | TBS_NOTICKS, 508, 263, 290, 34, Opacity);
+        text(L"Overall opacity", 516, 275, 188, 24, 0, false, ui.heading);
+        text(L"", 724, 275, 70, 24, OpacityValue, true);
+        HWND opacity = add(TRACKBAR_CLASSW, L"Overlay opacity", WS_TABSTOP | TBS_HORZ | TBS_NOTICKS, 508, 307, 290, 34, Opacity);
         SendMessageW(opacity, TBM_SETRANGE, TRUE, MAKELPARAM(15, 100)); SendMessageW(opacity, TBM_SETPAGESIZE, 0, 5);
-        text(L"Position", 216, 338, 578, 25, 0, false, ui.heading);
-        button(L"Move overlay", 216, 379, 174, 38, MoveOverlay);
-        button(L"Reset position and size", 406, 379, 212, 38, ResetPosition);
+        text(L"Position", 216, 382, 578, 25, 0, false, ui.heading);
+        button(L"Move overlay", 216, 423, 174, 38, MoveOverlay);
+        button(L"Reset position and size", 406, 423, 212, 38, ResetPosition);
         text(L"Drag the overlay, then select Done moving. Switching to another application ends moving automatically.",
-            216, 442, 578, 45, 0, true);
+            216, 480, 578, 45, 0, true);
         text(L"Controller size is saved on the Controller page. Original has its own opacity under Controller > Opacity; this opacity applies to all other styles. Reset restores keyboard size to 100% and the shared position to the bottom-left corner.",
-            216, 505, 578, 83, 0, true, ui.smallFont);
+            216, 543, 578, 61, 0, true, ui.smallFont);
     }
     ui.updating = false; UpdateControls(); InvalidateRect(hwnd_, nullptr, TRUE);
 }
@@ -512,17 +518,26 @@ void SettingsWindow::UpdateControls() {
             InvalidateControl(hwnd_, PressedColor);
         }
     } else if (page_ == 1) {
+        auto slots = KeyboardSlots(settings);
+        for (size_t mouse = MouseSlotFirst; mouse < MouseSlotFirst + MouseSlotCount; ++mouse) slots.push_back(mouse);
+        const bool changedSelection = std::find(slots.begin(), slots.end(), static_cast<size_t>(ui.selectedSlot)) == slots.end();
+        if (changedSelection) ui.selectedSlot = static_cast<int>(slots.front());
         const auto& slot = settings.slots[static_cast<size_t>(ui.selectedSlot)];
         HWND list = GetDlgItem(hwnd_, SlotList); SendMessageW(list, WM_SETREDRAW, FALSE, 0);
         const LRESULT top = SendMessageW(list, LB_GETTOPINDEX, 0, 0); SendMessageW(list, LB_RESETCONTENT, 0, 0);
-        for (size_t i = 0; i < SlotCount; ++i) {
-            std::wstring name = SlotName(i); if (!settings.slots[i].visible) name += L"  (hidden)";
-            SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(name.c_str()));
+        LRESULT selection = 0;
+        for (size_t id : slots) {
+            std::wstring name = SlotName(id); if (!settings.slots[id].visible) name += L"  (hidden)";
+            const LRESULT row = SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(name.c_str()));
+            if (row < 0) continue;
+            SendMessageW(list, LB_SETITEMDATA, static_cast<WPARAM>(row), static_cast<LPARAM>(id));
+            if (id == static_cast<size_t>(ui.selectedSlot)) selection = row;
         }
-        SendMessageW(list, LB_SETCURSEL, ui.selectedSlot, 0); if (top != LB_ERR) SendMessageW(list, LB_SETTOPINDEX, top, 0);
+        SendMessageW(list, LB_SETCURSEL, static_cast<WPARAM>(selection), 0);
+        if (top != LB_ERR) SendMessageW(list, LB_SETTOPINDEX, static_cast<WPARAM>(std::min(top, static_cast<LRESULT>(slots.size() - 1))), 0);
         SendMessageW(list, WM_SETREDRAW, TRUE, 0); InvalidateRect(list, nullptr, TRUE);
         SetText(hwnd_, SlotTitle, SlotName(static_cast<size_t>(ui.selectedSlot))); Check(hwnd_, SlotVisible, slot.visible);
-        if (GetFocus() != GetDlgItem(hwnd_, LabelEdit)) SetText(hwnd_, LabelEdit, slot.label);
+        if (changedSelection || GetFocus() != GetDlgItem(hwnd_, LabelEdit)) SetText(hwnd_, LabelEdit, slot.label);
         SetText(hwnd_, InputValue, slot.input == InputNone ? L"Not assigned" : InputName(slot.input));
         SetText(hwnd_, RecordInput, captureSlot_ >= 0 ? L"Cancel recording" : L"Record input");
     } else if (page_ == 2) {
@@ -585,6 +600,7 @@ void SettingsWindow::UpdateControls() {
         if (Text(hwnd_, UpdateNotes) != notes) SetText(hwnd_, UpdateNotes, notes);
     } else if (page_ == 6) {
         Check(hwnd_, Enabled, settings.enabled); Check(hwnd_, MouseVisible, settings.showMouse);
+        for (int id = KeyboardFormFirst; id <= KeyboardFormLast; ++id) InvalidateControl(hwnd_, id);
         SendDlgItemMessageW(hwnd_, Layout, CB_SETCURSEL, settings.isoLayout ? 1 : 0, 0);
         SendDlgItemMessageW(hwnd_, Scale, TBM_SETPOS, TRUE, settings.scale);
         SendDlgItemMessageW(hwnd_, Opacity, TBM_SETPOS, TRUE, settings.opacity);
@@ -626,6 +642,13 @@ void SettingsWindow::Command(int id, int code) {
     if (ui.updating || !app_) return;
     if (id >= NavOverlay && id <= NavLayout) { SelectPage(id - NavOverlay); return; }
     Settings& settings = app_->settings;
+    if (id >= KeyboardFormFirst && id <= KeyboardFormLast) {
+        if (code != BN_CLICKED) return;
+        CancelCapture();
+        if (app_->overlay.Editing()) app_->EditPosition(false);
+        settings.keyboardForm = static_cast<KeyboardForm>(id - KeyboardFormFirst);
+        ui.status.clear(); app_->Changed(); UpdateControls(); return;
+    }
     if (id >= ThemeFirst && id <= ThemeLast) {
         if (code != BN_CLICKED || !GradientAppearance(settings, ui.appearanceController) || id == ThemeFirst) return;
         settings.colorTheme = static_cast<ColorTheme>(id - ThemeFirst);
@@ -649,6 +672,7 @@ void SettingsWindow::Command(int id, int code) {
     }
     switch (id) {
     case OpenLayout: SelectPage(ui.appearanceController ? 4 : 6); return;
+    case OpenKeyboardLayout: SelectPage(6); return;
     case AppearanceDevice: {
         if (code != CBN_SELCHANGE) return;
         const LRESULT selected = SendDlgItemMessageW(hwnd_, AppearanceDevice, CB_GETCURSEL, 0, 0);
@@ -744,11 +768,16 @@ void SettingsWindow::Command(int id, int code) {
     case ExitApp: app_->Quit(); return;
     case Enabled: settings.enabled = Checked(hwnd_, Enabled); app_->Changed(); break;
     case MouseVisible: settings.showMouse = Checked(hwnd_, MouseVisible); app_->Changed(); break;
-    case Layout:
+    case Layout: {
         if (code != CBN_SELCHANGE) return;
-        settings.isoLayout = SendDlgItemMessageW(hwnd_, Layout, CB_GETCURSEL, 0, 0) == 1;
+        const LRESULT selected = SendDlgItemMessageW(hwnd_, Layout, CB_GETCURSEL, 0, 0);
+        if (selected < 0 || selected > 1) return;
+        CancelCapture();
+        if (app_->overlay.Editing()) app_->EditPosition(false);
+        settings.isoLayout = selected == 1;
         ui.previewIso = settings.isoLayout; app_->Changed();
         break;
+    }
     case MoveOverlay:
         if (page_ == 4 && settings.device != OverlayDevice::Controller) return;
         ui.status.clear();
@@ -767,8 +796,9 @@ void SettingsWindow::Command(int id, int code) {
         if (code != LBN_SELCHANGE) return;
         {
             const LRESULT selected = SendDlgItemMessageW(hwnd_, SlotList, LB_GETCURSEL, 0, 0);
+            const LRESULT slot = selected < 0 ? LB_ERR : SendDlgItemMessageW(hwnd_, SlotList, LB_GETITEMDATA, static_cast<WPARAM>(selected), 0);
             CancelCapture();
-            if (selected >= 0 && selected < static_cast<LRESULT>(SlotCount)) ui.selectedSlot = static_cast<int>(selected);
+            if (slot >= 0 && slot < static_cast<LRESULT>(SlotCount)) ui.selectedSlot = static_cast<int>(slot);
             ui.status.clear(); UpdateControls();
         }
         break;
@@ -1001,12 +1031,14 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wParam,
         const bool nav = item->CtlID >= NavOverlay && item->CtlID <= NavLayout;
         const bool styleCard = item->CtlID >= StyleFirst && item->CtlID <= StyleLast;
         const bool controllerStyleCard = item->CtlID >= ControllerStyleFirst && item->CtlID <= ControllerStyleLast;
+        const bool keyboardFormCard = item->CtlID >= KeyboardFormFirst && item->CtlID <= KeyboardFormLast;
         const bool themeCard = item->CtlID >= ThemeFirst && item->CtlID <= ThemeLast;
         const bool colorButton = item->CtlID >= BackgroundStart && item->CtlID <= PressedColor;
         const ColorTheme activeTheme = self->app_->settings.colorTheme == ColorTheme::Original ? ColorTheme::Sunset : self->app_->settings.colorTheme;
         const bool selected = (nav && static_cast<int>(item->CtlID - NavOverlay) == self->page_) ||
             (styleCard && static_cast<int>(item->CtlID - StyleFirst) == static_cast<int>(self->app_->settings.style)) ||
             (controllerStyleCard && static_cast<int>(item->CtlID - ControllerStyleFirst) == static_cast<int>(self->app_->settings.controllerStyle)) ||
+            (keyboardFormCard && static_cast<int>(item->CtlID - KeyboardFormFirst) == static_cast<int>(self->app_->settings.keyboardForm)) ||
             (themeCard && static_cast<int>(item->CtlID - ThemeFirst) == static_cast<int>(activeTheme)) ||
             (item->CtlID == OriginalSolid && self->app_->settings.originalOpacity == 100) ||
             (item->CtlID == OriginalTransparent && self->app_->settings.originalOpacity == 55) ||
@@ -1018,18 +1050,18 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wParam,
         const bool swatch = item->CtlID >= AccentFirst && item->CtlID <= AccentLast;
         COLORREF fill = selected ? RGB(30, 49, 64) : (nav ? Sidebar : Surface);
         COLORREF textColor = selected || primary ? Blue : Foreground;
-        if ((styleCard || controllerStyleCard) && selected) { fill = Tint(Background, accent, 12); textColor = Foreground; }
+        if ((styleCard || controllerStyleCard || keyboardFormCard) && selected) { fill = Tint(Background, accent, 12); textColor = Foreground; }
         if (item->itemState & ODS_SELECTED) fill = RGB(48, 65, 83);
         if (item->itemState & ODS_DISABLED) textColor = Muted;
         Fill(item->hDC, item->rcItem, nav || item->CtlID == ExitApp ? Sidebar : Background);
-        const COLORREF edge = selected ? ((styleCard || controllerStyleCard) ? accent : RGB(50, 93, 118)) : (nav ? Sidebar : Border);
+        const COLORREF edge = selected ? ((styleCard || controllerStyleCard || keyboardFormCard) ? accent : RGB(50, 93, 118)) : (nav ? Sidebar : Border);
         HBRUSH brush = CreateSolidBrush(fill); HPEN pen = CreatePen(PS_SOLID, 1, edge);
         HGDIOBJ oldBrush = SelectObject(item->hDC, brush); HGDIOBJ oldPen = SelectObject(item->hDC, pen);
         RoundRect(item->hDC, item->rcItem.left, item->rcItem.top, item->rcItem.right, item->rcItem.bottom, Px(10), Px(10));
         SelectObject(item->hDC, oldBrush); SelectObject(item->hDC, oldPen); DeleteObject(brush); DeleteObject(pen);
         RECT labelRect = item->rcItem; UINT align = DT_CENTER;
         if (nav) { labelRect.left += Px(15); align = DT_LEFT; }
-        if (styleCard || controllerStyleCard) { labelRect.left += Px(4); labelRect.right -= Px(4); }
+        if (styleCard || controllerStyleCard || keyboardFormCard) { labelRect.left += Px(4); labelRect.right -= Px(4); }
         if (themeCard) {
             auto preview = self->app_->settings;
             preview.colorTheme = static_cast<ColorTheme>(item->CtlID - ThemeFirst);

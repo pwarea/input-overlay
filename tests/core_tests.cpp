@@ -1,6 +1,8 @@
 #include "app.hpp"
 #include "colors.hpp"
 #include "geometry.hpp"
+#include "keyboard_input.hpp"
+#include "keyboard_layout.hpp"
 #include <algorithm>
 #include <climits>
 #include <cstdio>
@@ -62,11 +64,14 @@ void TestRemapping() {
     input_overlay::BindInput(settings, SideSlot, input_overlay::InputNone);
     Check(settings.slots[SideSlot].input == input_overlay::InputNone, "Unbound must disable input");
     input_overlay::BindInput(settings, 0, VK_RSHIFT);
-    Check(settings.slots[0].input == VK_SHIFT && settings.slots[ShiftSlot].input == 0, "Right Shift must share generic Shift binding");
+    Check(settings.slots[0].input == VK_RSHIFT && settings.slots[ShiftSlot].input == VK_LSHIFT &&
+        settings.slots[input_overlay::keyboard::RightShift].input == 0, "Right Shift must move independently without changing Left Shift");
     input_overlay::BindInput(settings, 2, VK_LCONTROL);
-    Check(settings.slots[2].input == VK_CONTROL && settings.slots[ControlSlot].input == 0, "Control aliases must be unique");
+    Check(settings.slots[2].input == VK_LCONTROL && settings.slots[ControlSlot].input == 0 &&
+        settings.slots[input_overlay::keyboard::RightCtrl].input == VK_RCONTROL, "Left Ctrl must move independently without changing Right Ctrl");
     input_overlay::BindInput(settings, 3, VK_RMENU);
-    Check(settings.slots[3].input == VK_MENU && settings.slots[AltSlot].input == 0, "Alt aliases must be unique");
+    Check(settings.slots[3].input == VK_RMENU && settings.slots[AltSlot].input == VK_LMENU &&
+        settings.slots[input_overlay::keyboard::RightAlt].input == 0, "Right Alt must move independently without changing Left Alt");
     input_overlay::BindInput(settings, 4, VK_XBUTTON1);
     Check(settings.slots[4].input == input_overlay::MouseSide1, "Mouse VK alias must use mouse input domain");
     input_overlay::BindInput(settings, input_overlay::SlotCount, 'Z');
@@ -88,12 +93,184 @@ void TestNormalization() {
     Check(settings.x == 0 && settings.y == 32767, "Anchor margins must be nonnegative and bounded");
     Check(settings.scale == 10 && settings.controllerScale == 200 && settings.opacity == 100, "Visual bounds must clamp independently");
     Check(settings.hotkeyVk == VK_F10 && settings.hotkeyModifiers == (MOD_CONTROL | MOD_ALT), "Invalid shortcut needs safe default");
-    Check(settings.slots[1].input == VK_SHIFT && settings.slots[2].input == 0 && settings.slots[ShiftSlot].input == 0, "Duplicate aliases must normalize once");
+    Check(settings.slots[1].input == VK_LSHIFT && settings.slots[2].input == VK_RSHIFT && settings.slots[ShiftSlot].input == 0 &&
+        settings.slots[input_overlay::keyboard::RightShift].input == 0, "Duplicate physical modifiers must normalize without collapsing left and right");
     Check(settings.slots[3].input == 0, "Invalid input must become unbound");
     Check(settings.slots[4].label == L"Somelabel" && settings.slots[5].label.size() == 24, "Labels need bounded control-free text");
     Check(settings.applications.size() == 2, "Only unique absolute application paths are allowed");
-    Check(input_overlay::InputName(VK_RSHIFT) == L"Shift", "Modifier name must be English and canonical");
+    Check(input_overlay::InputName(VK_RSHIFT) == L"Right Shift" && input_overlay::InputName(VK_SHIFT) == L"Shift",
+        "Modifier names must distinguish physical sides and legacy family aliases");
     Check(input_overlay::HotkeyName(MOD_CONTROL | MOD_ALT, VK_F10) == L"Ctrl + Alt + F10", "Shortcut label must be English");
+}
+
+void TestKeyboardInputIdentities() {
+    using namespace input_overlay;
+    Check(NormalizeKeyboardInput(VK_SHIFT, 0x2a, false) == VK_LSHIFT &&
+        NormalizeKeyboardInput(VK_SHIFT, 0x36, false) == VK_RSHIFT &&
+        NormalizeKeyboardInput(VK_RSHIFT, 0, false) == VK_RSHIFT,
+        "Raw and injected Shift events must retain the physical left or right identity");
+    Check(NormalizeKeyboardInput(VK_CONTROL, 0x1d, false) == VK_LCONTROL &&
+        NormalizeKeyboardInput(VK_CONTROL, 0x1d, true) == VK_RCONTROL &&
+        NormalizeKeyboardInput(VK_MENU, 0x38, false) == VK_LMENU &&
+        NormalizeKeyboardInput(VK_MENU, 0x38, true) == VK_RMENU,
+        "Extended Ctrl and Alt events must map to independent right-side inputs");
+    Check(NormalizeKeyboardInput(VK_RETURN, 0x1c, false) == VK_RETURN &&
+        NormalizeKeyboardInput(VK_RETURN, 0x1c, true) == NumpadEnter && InputName(NumpadEnter) == L"Numpad Enter",
+        "Numpad Enter must have a distinct input identity and English name");
+    struct NumberKey { UINT scan, navigation, number; };
+    const NumberKey keys[] = {{0x47, VK_HOME, VK_NUMPAD7}, {0x48, VK_UP, VK_NUMPAD8},
+        {0x49, VK_PRIOR, VK_NUMPAD9}, {0x4b, VK_LEFT, VK_NUMPAD4}, {0x4c, VK_CLEAR, VK_NUMPAD5},
+        {0x4d, VK_RIGHT, VK_NUMPAD6}, {0x4f, VK_END, VK_NUMPAD1}, {0x50, VK_DOWN, VK_NUMPAD2},
+        {0x51, VK_NEXT, VK_NUMPAD3}, {0x52, VK_INSERT, VK_NUMPAD0}, {0x53, VK_DELETE, VK_DECIMAL}};
+    for (const auto& key : keys) {
+        Check(NormalizeKeyboardInput(key.navigation, key.scan, false) == static_cast<int>(key.number) &&
+            NormalizeKeyboardInput(key.number, key.scan, false) == static_cast<int>(key.number),
+            "Numpad inputs must retain the same identity with Num Lock on or off");
+        Check(NormalizeKeyboardInput(key.navigation, key.scan, true) == static_cast<int>(key.navigation),
+            "Dedicated navigation keys must remain distinct from Num Lock-off numpad keys");
+        Check(NormalizeKeyboardInput('Q', key.scan, false) == 'Q',
+            "A software-remapped letter must not become a numpad key because it retains a scan code");
+    }
+    Check(NormalizeKeyboardInput(VK_SHIFT, 0x2a, true) == InputNone &&
+        NormalizeKeyboardInput(VK_SHIFT, 0x36, true) == InputNone &&
+        NormalizeKeyboardInput(VK_CONTROL, 0x1d, false, true) == InputNone &&
+        NormalizeKeyboardInput(VK_PAUSE, 0x45, false, true) == VK_PAUSE &&
+        NormalizeKeyboardInput(VK_CANCEL, 0x46, true) == VK_PAUSE &&
+        NormalizeKeyboardInput(VK_CANCEL, 0x46, false) == VK_CANCEL &&
+        NormalizeKeyboardInput(VK_CANCEL, 0, true) == VK_CANCEL &&
+        NormalizeKeyboardInput(VK_SNAPSHOT, 0x37, true) == VK_SNAPSHOT &&
+        NormalizeKeyboardInput(VK_NUMLOCK, 0x45, true) == VK_NUMLOCK,
+        "Synthetic modifier prefixes must not create held keys while Pause, Print Screen and Num Lock remain available");
+    Check(NormalizeKeyboardInput(0, 0, false) == InputNone && NormalizeKeyboardInput(255, 0, false) == InputNone &&
+        NormalizeKeyboardInput(512, 0, false) == InputNone && NormalizeKeyboardInput('Q', 0xff, false) == InputNone,
+        "Invalid and keyboard-overrun packets must not enter the input state");
+    const auto messageFlags = [](UINT scan, bool extended, bool released = false) {
+        return static_cast<LPARAM>(1u | (scan << 16) | (extended ? 0x01000000u : 0u) | (released ? 0xc0000000u : 0u));
+    };
+    for (const bool released : {false, true}) {
+        Check(IsCapturedKeyboardMessage(VK_NUMPAD6, VK_RIGHT, messageFlags(0x4d, false, released)) &&
+            !IsCapturedKeyboardMessage(VK_NUMPAD6, VK_RIGHT, messageFlags(0x4d, true, released)) &&
+            !IsCapturedKeyboardMessage(VK_NUMPAD6, VK_RIGHT, messageFlags(0, false, released)),
+            "Recording Num Lock-off Numpad 6 must consume its queued navigation message without consuming a dedicated Right arrow");
+        Check(IsCapturedKeyboardMessage(VK_RCONTROL, VK_CONTROL, messageFlags(0x1d, true, released)) &&
+            !IsCapturedKeyboardMessage(VK_RCONTROL, VK_CONTROL, messageFlags(0x1d, false, released)) &&
+            IsCapturedKeyboardMessage(VK_RSHIFT, VK_SHIFT, messageFlags(0x36, false, released)),
+            "Captured physical modifiers must match their queued generic key messages by scan and extended flag");
+        Check(IsCapturedKeyboardMessage(NumpadEnter, VK_RETURN, messageFlags(0x1c, true, released)) &&
+            !IsCapturedKeyboardMessage(NumpadEnter, VK_RETURN, messageFlags(0x1c, false, released)),
+            "Captured Numpad Enter must consume extended Enter messages without consuming the main Enter key");
+        Check(IsCapturedKeyboardMessage(VK_RCONTROL, VK_CONTROL, messageFlags(0, false, released)) &&
+            IsCapturedKeyboardMessage(VK_RCONTROL, VK_RCONTROL, messageFlags(0, false, released)) &&
+            IsCapturedKeyboardMessage(VK_PAUSE, VK_PAUSE, messageFlags(0x45, false, released)) &&
+            !IsCapturedKeyboardMessage(0, VK_PAUSE, messageFlags(0x45, false, released)),
+            "Virtual modifier messages with no scan code and Pause must match safely without inventing a captured key");
+        Check(IsCapturedKeyboardMessage(VK_PAUSE, VK_CANCEL, messageFlags(0x46, true, released)),
+            "Recording Ctrl+Pause must consume its Break messages as the physical Pause key");
+    }
+    for (const int family : {VK_SHIFT, VK_CONTROL, VK_MENU}) {
+        auto settings = DefaultSettings();
+        const int left = ModifierLeft(family), right = ModifierRight(family);
+        Check(InputsOverlap(family, left) && InputsOverlap(right, family) && !InputsOverlap(left, right),
+            "A legacy modifier family must conflict with either side while left and right remain independent");
+        BindInput(settings, 0, family);
+        for (size_t i = 1; i < SlotCount; ++i)
+            Check(!InputsOverlap(settings.slots[i].input, family), "Assigning a modifier family must clear both physical-side bindings");
+        BindInput(settings, 1, right);
+        Check(settings.slots[0].input == 0 && settings.slots[1].input == right,
+            "Assigning one modifier side must displace a conflicting legacy family binding");
+        BindInput(settings, 2, left);
+        NormalizeSettings(settings);
+        Check(settings.slots[1].input == right && settings.slots[2].input == left,
+            "Normalizing independent side bindings must preserve both assignments");
+    }
+    auto settings = DefaultSettings();
+    BindInput(settings, 0, NumpadEnter);
+    Check(settings.slots[0].input == NumpadEnter && settings.slots[keyboard::NumEnter].input == 0 &&
+        settings.slots[keyboard::Enter].input == VK_RETURN,
+        "Remapping Numpad Enter must not steal the main Enter input");
+}
+
+void TestKeyboardFormsAndBindings(const TemporaryDirectory& temp) {
+    using namespace input_overlay;
+    const auto file = temp.File(L"keyboard-forms.ini");
+    auto settings = DefaultSettings();
+    Check(settings.keyboardForm == KeyboardForm::Gaming && settings.slots.size() == 112 &&
+        keyboard::LeftMouse == 28 && keyboard::Side1 == 31 && keyboard::ScrollDown == 34,
+        "New keyboard forms must keep Gaming as default and preserve all legacy mouse slot indexes");
+    BindInput(settings, keyboard::Side1, 'Q');
+    BindInput(settings, keyboard::Side2, 'J');
+    BindInput(settings, keyboard::Num9, VK_RETURN);
+    settings.slots[keyboard::J].label = L"Custom J";
+    settings.slots[keyboard::Num9].visible = false;
+    settings.enabled = false;
+    settings.onlySelectedApps = true;
+    settings.startMinimized = true;
+    settings.applications = {temp.File(L"Absent Game\\game.exe")};
+    settings.scale = 137;
+    settings.controllerScale = 157;
+    settings.opacity = 61;
+    settings.originalOpacity = 55;
+    const auto savedSlots = settings.slots;
+    for (int form = 0; form < KeyboardFormCount; ++form) for (const bool iso : {false, true}) {
+        settings.keyboardForm = static_cast<KeyboardForm>(form);
+        settings.isoLayout = iso;
+        Check(SaveSettings(file, settings), "Every keyboard form and ANSI/ISO combination must save");
+        Settings restored;
+        Check(LoadSettings(file, restored) && restored.keyboardForm == settings.keyboardForm && restored.isoLayout == iso,
+            "Keyboard form must persist independently of ANSI and ISO selection");
+        for (size_t i = 0; i < SlotCount; ++i)
+            Check(restored.slots[i].input == savedSlots[i].input && restored.slots[i].label == savedSlots[i].label &&
+                restored.slots[i].visible == savedSlots[i].visible,
+                "Changing keyboard form must preserve shared remappings, labels and hidden slots without reactivating Q or J");
+        Check(!restored.enabled && restored.onlySelectedApps && restored.startMinimized && restored.applications == settings.applications &&
+            restored.scale == 137 && restored.controllerScale == 157 && restored.opacity == 61 && restored.originalOpacity == 55,
+            "Keyboard forms must preserve application restrictions, startup state and independent controller preferences");
+    }
+    for (const int invalid : {INT_MIN, -1, KeyboardFormCount, INT_MAX}) {
+        settings.keyboardForm = static_cast<KeyboardForm>(invalid);
+        NormalizeSettings(settings);
+        Check(settings.keyboardForm == KeyboardForm::Gaming && settings.slots[keyboard::Side1].input == 'Q' &&
+            settings.slots[keyboard::Q].input == 0, "Invalid keyboard forms must restore Gaming without erasing remappings");
+    }
+    for (const char* invalid : {"-1", "4", "2147483648", "invalid", ""}) {
+        WriteBytes(file, std::string("[General]\nkeyboardForm=3\nkeyboardForm=") + invalid + "\nopacity=61\n");
+        Check(LoadSettings(file, settings) && settings.keyboardForm == KeyboardForm::Gaming && settings.opacity == 61,
+            "Malformed keyboard form entries must restore Gaming while retaining other settings");
+    }
+    WriteBytes(file, "[General]\nversion=1\nenabled=0\nonlySelectedApps=1\nopacity=61\n"
+        "[Slot7]\ninput=0\n[Slot31]\ninput=81\n[Slot32]\ninput=74\n"
+        "[Slot18]\ninput=16\n[Slot24]\ninput=17\n[Slot26]\ninput=18\n");
+    Check(LoadSettings(file, settings) && settings.keyboardForm == KeyboardForm::Gaming &&
+        settings.slots[keyboard::Side1].input == 'Q' && settings.slots[keyboard::Q].input == 0 &&
+        settings.slots[keyboard::Side2].input == 'J' && settings.slots[keyboard::J].input == 0 &&
+        settings.slots[keyboard::LeftShift].input == VK_LSHIFT && settings.slots[keyboard::RightShift].input == VK_RSHIFT &&
+        settings.slots[keyboard::LeftCtrl].input == VK_LCONTROL && settings.slots[keyboard::RightCtrl].input == VK_RCONTROL &&
+        settings.slots[keyboard::LeftAlt].input == VK_LMENU && settings.slots[keyboard::RightAlt].input == VK_RMENU &&
+        !settings.enabled && settings.onlySelectedApps && settings.opacity == 61,
+        "Legacy settings must append unclaimed defaults, preserve mouse remaps and split only the old default modifier slots");
+    Check(SaveSettings(file, settings) && LoadSettings(file, settings) && settings.slots[keyboard::Q].input == 0 &&
+        settings.slots[keyboard::J].input == 0 && settings.slots[keyboard::RightShift].input == VK_RSHIFT,
+        "Saving migrated keyboard settings must not repeat migration or revive displaced keys");
+    for (const int version : {1, 2}) {
+        WriteBytes(file, "[General]\nbindingVersion=" + std::to_string(version) + "\n[Slot32]\ninput=16\n");
+        Check(LoadSettings(file, settings) && settings.slots[keyboard::Side2].input == VK_SHIFT &&
+            settings.slots[keyboard::LeftShift].input == 0 && settings.slots[keyboard::RightShift].input == 0,
+            "Legacy custom generic modifiers must retain family semantics and displace both newly defaulted side bindings");
+    }
+    WriteBytes(file, "[General]\nbindingVersion=2\n[Slot18]\ninput=16\n");
+    Check(LoadSettings(file, settings) && settings.slots[keyboard::LeftShift].input == VK_SHIFT &&
+        settings.slots[keyboard::RightShift].input == 0 && SaveSettings(file, settings) && LoadSettings(file, settings) &&
+        settings.slots[keyboard::LeftShift].input == VK_SHIFT,
+        "A modern intentionally generic left-slot binding must not be reinterpreted as the legacy default");
+    WriteBytes(file, "[General]\nbindingVersion=2\nkeyboardForm=3\n[Slot111]\ninput=81\nlabel=Custom\nvisible=0\n");
+    Check(LoadSettings(file, settings) && settings.slots[keyboard::Num9].input == 'Q' && settings.slots[keyboard::Q].input == 0 &&
+        settings.slots[keyboard::Num9].label == L"Custom" && !settings.slots[keyboard::Num9].visible,
+        "An explicit binding in the final appended slot must override an unstored earlier default");
+    Check(SaveSettings(file, settings) && LoadSettings(file, settings) && settings.slots[keyboard::Num9].input == 'Q' &&
+        settings.slots[keyboard::Q].input == 0, "Appended custom assignments must remain stable after saving the complete catalog");
+    Check(!LoadSettings(temp.File(L"missing-keyboard-form.ini"), settings) && settings.keyboardForm == KeyboardForm::Gaming &&
+        settings.slots[keyboard::NumEnter].input == NumpadEnter && settings.slots[keyboard::RightCtrl].input == VK_RCONTROL,
+        "A missing file must restore Gaming with the complete independent key catalog");
 }
 
 void TestApplicationMatching() {
@@ -214,6 +391,56 @@ void TestControllerScale(const TemporaryDirectory& temp) {
     }
     Check(!input_overlay::LoadSettings(temp.File(L"new-device-sizes.ini"), settings) && settings.scale == 100 && settings.controllerScale == 100,
         "Missing settings must reset both sizes to their defaults");
+}
+
+void TestKeyboardFormGeometry() {
+    using namespace input_overlay;
+    const RECT screens[] = {{0, 0, 2560, 1440}, {-2560, -200, 0, 1240}};
+    for (int form = 0; form < KeyboardFormCount; ++form)
+        for (const bool iso : {false, true}) for (const bool mouse : {false, true})
+            for (const int scale : {10, 100, 157, 200}) {
+                auto settings = DefaultSettings();
+                settings.keyboardForm = static_cast<KeyboardForm>(form);
+                settings.isoLayout = iso;
+                settings.showMouse = mouse;
+                settings.scale = scale;
+                const SIZE size = OverlaySize(settings);
+                Check(size.cx > 0 && size.cy > 0, "Every keyboard form must have positive dimensions at each supported test scale");
+                for (const bool right : {false, true}) for (const bool bottom : {false, true}) {
+                    settings.anchorRight = right;
+                    settings.anchorBottom = bottom;
+                    settings.x = 32;
+                    settings.y = 21;
+                    for (const RECT screen : screens) {
+                        const POINT position = AnchoredPosition(settings, screen);
+                        Check((right ? screen.right - position.x - size.cx : position.x - screen.left) == 32 &&
+                            (bottom ? screen.bottom - position.y - size.cy : position.y - screen.top) == 21,
+                            "All keyboard forms must preserve physical margins on positive and negative-origin displays");
+                        auto moved = settings;
+                        AnchorPosition(moved, screen, position);
+                        const POINT restored = AnchoredPosition(moved, screen);
+                        Check(moved.anchorRight == right && moved.anchorBottom == bottom && moved.x == 32 && moved.y == 21 &&
+                            restored.x == position.x && restored.y == position.y,
+                            "Keyboard movement must round trip every corner with ANSI, ISO and mouse visibility changes");
+                    }
+                    const RECT narrow{-700, -40, -400, 110};
+                    settings.x = settings.y = 32767;
+                    const POINT clamped = AnchoredPosition(settings, narrow);
+                    const LONG lastX = std::max(narrow.left, narrow.right - size.cx);
+                    const LONG lastY = std::max(narrow.top, narrow.bottom - size.cy);
+                    const SIZE after = OverlaySize(settings);
+                    Check(clamped.x == (right ? narrow.left : lastX) && clamped.y == (bottom ? narrow.top : lastY) &&
+                        after.cx == size.cx && after.cy == size.cy && settings.scale == scale,
+                        "A narrower display must clamp position without automatically shrinking the keyboard or changing its saved physical size");
+                }
+                const auto previousDpi = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_UNAWARE);
+                const SIZE unaware = OverlaySize(settings);
+                SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+                const SIZE aware = OverlaySize(settings);
+                if (previousDpi) SetThreadDpiAwarenessContext(previousDpi);
+                Check(unaware.cx == size.cx && unaware.cy == size.cy && aware.cx == size.cx && aware.cy == size.cy,
+                    "Keyboard form dimensions must stay in physical pixels independently of DPI awareness");
+            }
 }
 
 void TestControllerViewport() {
@@ -1040,9 +1267,12 @@ int main() {
         TemporaryDirectory temp;
         TestRemapping();
         TestNormalization();
+        TestKeyboardInputIdentities();
+        TestKeyboardFormsAndBindings(temp);
         TestApplicationMatching();
         TestGeometry();
         TestControllerScale(temp);
+        TestKeyboardFormGeometry();
         TestControllerViewport();
         TestControllerPositionMigration(temp);
         TestPersistence(temp);

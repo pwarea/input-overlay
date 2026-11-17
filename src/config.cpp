@@ -1,5 +1,7 @@
 #include "app.hpp"
 #include "geometry.hpp"
+#include "keyboard_input.hpp"
+#include "keyboard_layout.hpp"
 #include <dwmapi.h>
 #include <algorithm>
 #include <atomic>
@@ -14,9 +16,6 @@ constexpr wchar_t RunKey[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run
 
 int CanonicalInput(int input) {
     switch (input) {
-    case VK_LSHIFT: case VK_RSHIFT: return VK_SHIFT;
-    case VK_LCONTROL: case VK_RCONTROL: return VK_CONTROL;
-    case VK_LMENU: case VK_RMENU: return VK_MENU;
     case VK_LBUTTON: return MouseLeft;
     case VK_RBUTTON: return MouseRight;
     case VK_MBUTTON: return MouseMiddle;
@@ -153,13 +152,8 @@ std::wstring StartupCommand() {
 
 Settings DefaultSettings() {
     Settings settings;
-    const wchar_t* labels[SlotCount] = {L"ESC", L"1", L"2", L"3", L"4", L"5", L"TAB", L"Q", L"W", L"E", L"R", L"T",
-        L"CAPS", L"A", L"S", L"D", L"F", L"G", L"SHIFT", L"\\", L"Z", L"X", L"C", L"V", L"CTRL", L"WIN", L"ALT", L"SPACE",
-        L"Left", L"Right", L"Middle", L"Side 1", L"Side 2", L"Wheel up", L"Wheel down"};
-    const int inputs[SlotCount] = {VK_ESCAPE, '1', '2', '3', '4', '5', VK_TAB, 'Q', 'W', 'E', 'R', 'T',
-        VK_CAPITAL, 'A', 'S', 'D', 'F', 'G', VK_SHIFT, VK_OEM_102, 'Z', 'X', 'C', 'V', VK_CONTROL, VK_LWIN, VK_MENU, VK_SPACE,
-        MouseLeft, MouseRight, MouseMiddle, MouseSide1, MouseSide2, WheelUp, WheelDown};
-    for (size_t i = 0; i < SlotCount; ++i) settings.slots[i] = {labels[i], inputs[i], true};
+    const auto& definitions = KeyboardSlotDefinitions();
+    for (size_t i = 0; i < SlotCount; ++i) settings.slots[i] = {definitions[i].label, definitions[i].input, true};
     return settings;
 }
 
@@ -182,6 +176,8 @@ void NormalizeSettings(Settings& settings) {
         settings.style = OverlayStyle::Outline;
     if (settings.device != OverlayDevice::KeyboardMouse && settings.device != OverlayDevice::Controller)
         settings.device = OverlayDevice::KeyboardMouse;
+    if (static_cast<int>(settings.keyboardForm) < 0 || static_cast<int>(settings.keyboardForm) >= KeyboardFormCount)
+        settings.keyboardForm = KeyboardForm::Gaming;
     if (static_cast<int>(settings.controllerLayout) < 0 || static_cast<int>(settings.controllerLayout) >= ControllerLayoutCount)
         settings.controllerLayout = ControllerLayout::Xbox;
     if (static_cast<int>(settings.controllerStyle) < 0 || static_cast<int>(settings.controllerStyle) >= ControllerStyleCount)
@@ -195,13 +191,12 @@ void NormalizeSettings(Settings& settings) {
         settings.hotkeyVk = VK_F10;
         settings.hotkeyModifiers = MOD_CONTROL | MOD_ALT;
     }
-    std::array<bool, InputCount> used{};
     const auto defaults = DefaultSettings();
     for (size_t i = 0; i < SlotCount; ++i) {
         auto& slot = settings.slots[i];
         slot.input = CanonicalInput(slot.input);
-        if (slot.input && used[slot.input]) slot.input = InputNone;
-        if (slot.input) used[slot.input] = true;
+        if (slot.input && std::any_of(settings.slots.begin(), settings.slots.begin() + i,
+            [&](const Slot& other) { return InputsOverlap(slot.input, other.input); })) slot.input = InputNone;
         if (!ValidUnicode(slot.label)) slot.label = defaults.slots[i].label;
         slot.label.erase(std::remove_if(slot.label.begin(), slot.label.end(), [](wchar_t c) { return c < 32 || c == 127; }), slot.label.end());
         if (slot.label.size() > 24) {
@@ -222,7 +217,7 @@ void NormalizeSettings(Settings& settings) {
 void BindInput(Settings& settings, size_t slot, int input) {
     if (slot >= SlotCount) return;
     input = CanonicalInput(input);
-    if (input) for (auto& item : settings.slots) if (CanonicalInput(item.input) == input) item.input = InputNone;
+    if (input) for (auto& item : settings.slots) if (InputsOverlap(CanonicalInput(item.input), input)) item.input = InputNone;
     settings.slots[slot].input = input;
 }
 
@@ -236,6 +231,8 @@ bool LoadSettings(const std::wstring& file, Settings& settings) {
     bool hasControllerAccent = false;
     bool hasControllerScale = false;
     int positionVersion = 1;
+    int bindingVersion = 1;
+    std::array<bool, SlotCount> storedInputs{};
     while (std::getline(stream, line)) {
         if (!line.empty() && line.back() == L'\r') line.pop_back();
         if (line.size() > 65536) continue;
@@ -269,6 +266,11 @@ bool LoadSettings(const std::wstring& file, Settings& settings) {
             }
             if (key == L"device") {
                 settings.device = numeric && number == 1 ? OverlayDevice::Controller : OverlayDevice::KeyboardMouse;
+                continue;
+            }
+            if (key == L"keyboardForm") {
+                settings.keyboardForm = numeric && number >= 0 && number < KeyboardFormCount
+                    ? static_cast<KeyboardForm>(number) : KeyboardForm::Gaming;
                 continue;
             }
             if (key == L"controllerLayout") {
@@ -307,6 +309,7 @@ bool LoadSettings(const std::wstring& file, Settings& settings) {
             }
             if (!numeric) continue;
             if (key == L"positionVersion") positionVersion = number;
+            else if (key == L"bindingVersion") bindingVersion = number;
             else if (key == L"x") settings.x = number;
             else if (key == L"y") settings.y = number;
             else if (key == L"scale") settings.scale = number;
@@ -328,7 +331,10 @@ bool LoadSettings(const std::wstring& file, Settings& settings) {
             int index = -1;
             if (!ParseInt(section.substr(4), index) || index < 0 || index >= static_cast<int>(SlotCount)) continue;
             auto& slot = settings.slots[static_cast<size_t>(index)];
-            if (key == L"input" && numeric && number >= 0 && number < static_cast<int>(InputCount)) slot.input = number;
+            if (key == L"input" && numeric && number >= 0 && number < static_cast<int>(InputCount)) {
+                slot.input = number;
+                storedInputs[static_cast<size_t>(index)] = true;
+            }
             else if (key == L"visible" && numeric && (number == 0 || number == 1)) slot.visible = number != 0;
             else if (key == L"label") { std::wstring label; if (Unescape(value, label)) slot.label = std::move(label); }
         } else if (section == L"Applications" && key.compare(0, 4, L"path") == 0 && settings.applications.size() < MaxApplications) {
@@ -341,6 +347,20 @@ bool LoadSettings(const std::wstring& file, Settings& settings) {
     if (!hasControllerAccent && settings.accent != DefaultSettings().accent)
         settings.controllerAccent = settings.accent;
     if (!hasControllerScale) settings.controllerScale = settings.scale;
+    if (bindingVersion < 2) {
+        for (const size_t slot : {size_t{18}, size_t{24}, size_t{26}}) {
+            const int input = settings.slots[slot].input;
+            if ((slot == 18 && input == VK_SHIFT) || (slot == 24 && input == VK_CONTROL) || (slot == 26 && input == VK_MENU))
+                settings.slots[slot].input = ModifierLeft(input);
+        }
+    }
+    for (size_t i = 0; i < SlotCount; ++i) if (!storedInputs[i]) {
+        for (size_t j = 0; j < SlotCount; ++j) if (storedInputs[j] &&
+            InputsOverlap(CanonicalInput(settings.slots[i].input), CanonicalInput(settings.slots[j].input))) {
+            settings.slots[i].input = InputNone;
+            break;
+        }
+    }
     NormalizeSettings(settings);
     if (positionVersion < 2 && settings.device == OverlayDevice::Controller) {
         const SIZE legacySize = OverlaySize(settings.controllerScale);
@@ -355,13 +375,14 @@ bool SaveSettings(const std::wstring& file, const Settings& settings) {
     Settings clean = settings;
     NormalizeSettings(clean);
     std::wostringstream output;
-    output << L"[General]\r\nversion=1\r\npositionVersion=2\r\nx=" << clean.x << L"\r\ny=" << clean.y << L"\r\nscale=" << clean.scale
+    output << L"[General]\r\nversion=1\r\npositionVersion=2\r\nbindingVersion=2\r\nx=" << clean.x << L"\r\ny=" << clean.y << L"\r\nscale=" << clean.scale
         << L"\r\nopacity=" << clean.opacity << L"\r\naccent=" << clean.accent << L"\r\nenabled=" << clean.enabled
         << L"\r\nstyle=" << static_cast<int>(clean.style)
         << L"\r\ncolorTheme=" << static_cast<int>(clean.colorTheme)
         << L"\r\ngradientFillOpacity=" << clean.gradientFillOpacity
         << L"\r\nbackgroundStart=" << clean.backgroundStart << L"\r\nbackgroundEnd=" << clean.backgroundEnd
         << L"\r\ndevice=" << static_cast<int>(clean.device)
+        << L"\r\nkeyboardForm=" << static_cast<int>(clean.keyboardForm)
         << L"\r\ncontrollerLayout=" << static_cast<int>(clean.controllerLayout)
         << L"\r\ncontrollerStyle=" << static_cast<int>(clean.controllerStyle)
         << L"\r\noriginalOpacity=" << clean.originalOpacity
@@ -419,6 +440,7 @@ std::wstring InputName(int input) {
     case MouseSide2: return L"Mouse side 2";
     case WheelUp: return L"Wheel up";
     case WheelDown: return L"Wheel down";
+    case NumpadEnter: return L"Numpad Enter";
     case VK_BACK: return L"Backspace";
     case VK_TAB: return L"Tab";
     case VK_CLEAR: return L"Clear";
@@ -426,6 +448,12 @@ std::wstring InputName(int input) {
     case VK_SHIFT: return L"Shift";
     case VK_CONTROL: return L"Ctrl";
     case VK_MENU: return L"Alt";
+    case VK_LSHIFT: return L"Left Shift";
+    case VK_RSHIFT: return L"Right Shift";
+    case VK_LCONTROL: return L"Left Ctrl";
+    case VK_RCONTROL: return L"Right Ctrl";
+    case VK_LMENU: return L"Left Alt";
+    case VK_RMENU: return L"Right Alt";
     case VK_PAUSE: return L"Pause";
     case VK_CAPITAL: return L"Caps Lock";
     case VK_ESCAPE: return L"Escape";

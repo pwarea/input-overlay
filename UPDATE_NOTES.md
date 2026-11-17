@@ -1,4 +1,5 @@
-- Added Original controller designs: black DualShock 4 and white-and-black Xbox and DualSense, with neutral Home icons.
-- Original starts fully opaque and saves its transparency independently from keyboard and other controller styles.
-- Added Solid (100%), Transparent (55%), a 15%-100% opacity slider, and Reset opacity.
-- Preserved close-fitting controller movement bounds and prevented artwork clipping at small sizes.
+- Added Gaming, 60%, 80% (TKL), and Full size keyboard choices on the Layout page. Gaming remains the default.
+- Added ANSI and ISO layouts with function keys, navigation keys, and a full number pad where applicable.
+- Updated Bindings to show the selected layout while preserving remapped inputs, custom labels, and hidden keys across layouts.
+- Added independent left and right modifiers and Numpad Enter, with correct number-pad input when Num Lock is off.
+- Kept keyboard size, screen anchoring, click-through behavior, and application filtering consistent across layouts.

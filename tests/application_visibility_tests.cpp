@@ -1,4 +1,14 @@
+#include <windows.h>
+#include <array>
+#include <string>
+#include <vector>
+#include <cstdint>
+#include <unordered_map>
+#include "controller.hpp"
+#include "updates.hpp"
+#define private public
 #include "app.hpp"
+#undef private
 #include <commctrl.h>
 #include <cstdio>
 #include <stdexcept>
@@ -172,6 +182,207 @@ struct Harness {
         Expect(true, true, "Position preview must appear while Settings is active");
     }
 };
+
+void TestKeyboardForms(Harness& harness) {
+    auto& app = harness.app;
+    const Settings original = app.settings;
+    const HWND window = app.preferences.Handle();
+    const auto click = [window](int id) { SendMessageW(window, WM_COMMAND, MAKEWPARAM(id, BN_CLICKED), 0); };
+    const auto chooseLayout = [window](bool iso) {
+        Check(SendDlgItemMessageW(window, Layout, CB_SETCURSEL, iso ? 1 : 0, 0) != CB_ERR,
+            "ANSI and ISO must remain available beside keyboard form controls");
+        SendMessageW(window, WM_COMMAND, MAKEWPARAM(Layout, CBN_SELCHANGE), 0);
+    };
+    const auto slotFor = [](int input) {
+        const auto& definitions = KeyboardSlotDefinitions();
+        for (size_t slot = 0; slot < definitions.size(); ++slot) if (definitions[slot].input == input) return slot;
+        throw std::runtime_error("Expected physical keyboard input must have a stable slot");
+    };
+    const auto listSlots = [window]() {
+        const HWND list = GetDlgItem(window, SlotList);
+        Check(list != nullptr, "Bindings list must exist");
+        const LRESULT count = SendMessageW(list, LB_GETCOUNT, 0, 0);
+        Check(count > 0 && count <= static_cast<LRESULT>(SlotCount), "Bindings list must have a bounded nonempty set of slots");
+        std::vector<size_t> slots;
+        for (LRESULT row = 0; row < count; ++row) {
+            const LRESULT slot = SendMessageW(list, LB_GETITEMDATA, static_cast<WPARAM>(row), 0);
+            Check(slot >= 0 && slot < static_cast<LRESULT>(SlotCount), "Each binding row must carry a valid stable slot identifier");
+            Check(std::find(slots.begin(), slots.end(), static_cast<size_t>(slot)) == slots.end(), "Bindings must not list the same physical element twice");
+            slots.push_back(static_cast<size_t>(slot));
+        }
+        return slots;
+    };
+    const auto selectSlot = [&](size_t slot) {
+        const auto slots = listSlots();
+        const auto found = std::find(slots.begin(), slots.end(), slot);
+        Check(found != slots.end(), "Requested binding must be present in the selected keyboard form");
+        const size_t row = static_cast<size_t>(found - slots.begin());
+        SendDlgItemMessageW(window, SlotList, LB_SETCURSEL, row, 0);
+        SendMessageW(window, WM_COMMAND, MAKEWPARAM(SlotList, LBN_SELCHANGE), 0);
+        Check(ui.selectedSlot == static_cast<int>(slot), "Selecting a binding row must resolve its stable slot, not the row index");
+        return row;
+    };
+    Focus(window);
+    app.settings.device = OverlayDevice::KeyboardMouse;
+    app.settings.showMouse = false;
+    app.Changed();
+    const size_t ySlot = slotFor('Y'), deleteSlot = slotFor(VK_DELETE), functionSlot = slotFor(VK_F5), numpadSlot = slotFor(VK_NUMPAD1);
+    const int keyCounts[] = {27, 61, 87, 104};
+    for (const bool hidden : {false, true}) {
+        app.settings.enabled = !hidden;
+        app.Changed();
+        for (int form = 0; form < KeyboardFormCount; ++form) for (const bool iso : {false, true}) {
+            click(NavLayout);
+            RECT previous{};
+            for (int index = 0; index < KeyboardFormCount; ++index) {
+                const HWND control = GetDlgItem(window, KeyboardFormFirst + index);
+                Check(control != nullptr && IsWindowVisible(control), "All four keyboard form buttons must be visible together");
+                RECT bounds{};
+                Check(GetWindowRect(control, &bounds) != FALSE && bounds.right > bounds.left && bounds.bottom > bounds.top,
+                    "Keyboard form button bounds must be valid");
+                if (index) Check(bounds.top == previous.top && bounds.bottom == previous.bottom && bounds.left > previous.right,
+                    "Keyboard form buttons must be side by side without overlap");
+                previous = bounds;
+            }
+            chooseLayout(iso);
+            click(KeyboardFormFirst + form);
+            Check(static_cast<int>(app.settings.keyboardForm) == form && app.settings.isoLayout == iso &&
+                app.settings.enabled == !hidden && app.settings.onlySelectedApps && app.settings.applications == original.applications &&
+                app.settings.scale == original.scale && app.settings.controllerScale == original.controllerScale &&
+                app.settings.controllerLayout == original.controllerLayout && app.settings.style == original.style,
+                "Changing keyboard form must immediately preserve layout, visibility, filter, scales and visual style");
+            Settings saved;
+            Check(LoadSettings(app.configPath, saved) && saved.keyboardForm == app.settings.keyboardForm && saved.isoLayout == iso &&
+                saved.enabled == !hidden && saved.onlySelectedApps && saved.applications == original.applications,
+                "Keyboard form and ANSI or ISO choice must persist without changing visibility restrictions");
+            harness.Expect(false, false, "Changing keyboard form must not reveal a hidden or application-filtered overlay");
+            click(NavBindings);
+            const auto slots = listSlots();
+            Check(slots.size() == static_cast<size_t>(keyCounts[form] + (iso ? 1 : 0)) + MouseSlotCount,
+                "Bindings must list only physical keys in the selected form plus all mouse bindings");
+            const auto contains = [&slots](size_t slot) { return std::find(slots.begin(), slots.end(), slot) != slots.end(); };
+            Check(contains(19) == iso, "The ISO-only key must be excluded from ANSI bindings");
+            Check(contains(ySlot) == (form > 0), "Gaming must exclude keys outside the existing left-side layout");
+            Check(contains(deleteSlot) == (form >= 2) && contains(functionSlot) == (form >= 2),
+                "Navigation and function keys must appear only in TKL and full-size layouts");
+            Check(contains(numpadSlot) == (form == 3), "Numpad bindings must appear only in the full-size keyboard");
+            for (size_t mouse = 0; mouse < MouseSlotCount; ++mouse)
+                Check(slots[slots.size() - MouseSlotCount + mouse] == MouseSlotFirst + mouse,
+                    "All seven stable mouse slots must follow keyboard keys even when the mouse is hidden");
+        }
+    }
+    click(OpenKeyboardLayout);
+    chooseLayout(false);
+    click(KeyboardFormFirst + static_cast<int>(KeyboardForm::FullSize));
+    click(NavBindings);
+    selectSlot(ySlot);
+    SetDlgItemTextW(window, LabelEdit, L"Custom Y");
+    click(SaveLabel);
+    click(RecordInput);
+    app.preferences.CaptureInput(VK_F24);
+    Check(!app.preferences.Capturing() && app.settings.slots[ySlot].input == VK_F24,
+        "Input recording must target an appended keyboard slot");
+    SendDlgItemMessageW(window, SlotVisible, BM_SETCHECK, BST_UNCHECKED, 0);
+    click(SlotVisible);
+    const size_t mouseSide = MouseSlotFirst + 3;
+    Check(selectSlot(mouseSide) != mouseSide, "Full-size mouse binding row must differ from its legacy slot identifier");
+    SetDlgItemTextW(window, LabelEdit, L"Side Q");
+    click(SaveLabel);
+    click(RecordInput);
+    app.preferences.CaptureInput('Q');
+    Check(app.settings.slots[mouseSide].input == 'Q' && app.settings.slots[7].input == InputNone &&
+        app.settings.slots[mouseSide].label == L"Side Q", "Recording Q on a mouse row must affect its stable mouse slot and remove the prior Q assignment");
+    selectSlot(ySlot);
+    click(RecordInput);
+    Check(app.preferences.Capturing(), "Recording must start before changing keyboard layout");
+    click(OpenKeyboardLayout);
+    Check(!app.preferences.Capturing(), "Opening keyboard layout must cancel an in-progress input recording");
+    for (int form = 0; form < KeyboardFormCount; ++form) {
+        click(KeyboardFormFirst + form);
+        Check(app.settings.slots[ySlot].input == VK_F24 && app.settings.slots[ySlot].label == L"Custom Y" &&
+            !app.settings.slots[ySlot].visible && app.settings.slots[mouseSide].input == 'Q' && app.settings.slots[mouseSide].label == L"Side Q",
+            "Switching physical keyboard forms must preserve hidden custom bindings and stable mouse assignments");
+    }
+    click(NavBindings);
+    selectSlot(ySlot);
+    click(UnbindInput);
+    Check(app.settings.slots[ySlot].input == InputNone && app.settings.slots[ySlot].label == L"Custom Y" && !app.settings.slots[ySlot].visible,
+        "Unbinding an appended key must preserve its label and visibility");
+    click(ResetBinding);
+    const Slot defaultY = DefaultSettings().slots[ySlot];
+    Check(app.settings.slots[ySlot].input == defaultY.input && app.settings.slots[ySlot].label == defaultY.label &&
+        app.settings.slots[ySlot].visible && app.settings.slots[mouseSide].input == 'Q',
+        "Reset to default must restore only the selected appended key");
+    for (const int physical : {VK_RCONTROL, NumpadEnter, VK_NUMPAD6}) {
+        const size_t slot = slotFor(physical);
+        selectSlot(slot);
+        click(RecordInput);
+        app.DeviceInput(INVALID_HANDLE_VALUE, physical, true);
+        Check(app.settings.slots[slot].input == physical && !app.preferences.Capturing() &&
+            std::none_of(app.pressed.begin(), app.pressed.end(), [](bool down) { return down; }),
+            "Recording right Ctrl or a numpad key must retain its physical identity and clear pressed state after saving");
+        const WPARAM key = physical == VK_RCONTROL ? VK_CONTROL : physical == NumpadEnter ? VK_RETURN : VK_RIGHT;
+        const LPARAM flags = physical == VK_RCONTROL ? 0x011d0000 : physical == NumpadEnter ? 0x011c0000 : 0x004d0000;
+        Check(app.captureIgnoreKey_ == static_cast<UINT>(physical) && IsCapturedKeyboardMessage(app.captureIgnoreKey_, key, flags) &&
+            IsCapturedKeyboardMessage(app.captureIgnoreKey_, key, flags | static_cast<LPARAM>(0xc0000000u)),
+            "After recording, both translated Windows key transitions must be consumed using the captured physical identity");
+        if (physical == VK_NUMPAD6) Check(!IsCapturedKeyboardMessage(app.captureIgnoreKey_, VK_RIGHT, 0x014d0000),
+            "Consuming captured numpad 6 must not consume the separate extended Right arrow key");
+        Settings saved;
+        Check(LoadSettings(app.configPath, saved) && saved.slots[slot].input == physical,
+            "Physical modifier and numpad bindings must survive reloading saved settings");
+    }
+    click(OpenKeyboardLayout);
+    click(KeyboardFormFirst + static_cast<int>(KeyboardForm::Gaming));
+    click(NavBindings);
+    Check(ui.selectedSlot == static_cast<int>(listSlots().front()), "Removing the selected key from a layout must select a present key");
+    click(OpenKeyboardLayout);
+    harness.BeginPreview();
+    click(KeyboardFormFirst + static_cast<int>(KeyboardForm::Compact));
+    harness.Expect(false, false, "Changing keyboard form must end position mode and restore application filtering");
+    harness.BeginPreview();
+    chooseLayout(true);
+    harness.Expect(false, false, "Changing ANSI or ISO layout must end position mode and restore application filtering");
+    app.settings = original;
+    app.Changed();
+    click(NavOverlay);
+}
+
+void TestPhysicalModifierState(Harness& harness) {
+    auto& app = harness.app;
+    const HANDLE first = reinterpret_cast<HANDLE>(static_cast<UINT_PTR>(101));
+    const HANDLE second = reinterpret_cast<HANDLE>(static_cast<UINT_PTR>(202));
+    const int modifiers[][3] = {{VK_LSHIFT, VK_RSHIFT, VK_SHIFT}, {VK_LCONTROL, VK_RCONTROL, VK_CONTROL}, {VK_LMENU, VK_RMENU, VK_MENU}};
+    for (const auto& keys : modifiers) {
+        app.ResetInputs();
+        app.DeviceInput(first, keys[0], true);
+        app.DeviceInput(first, keys[1], true);
+        Check(app.pressed[keys[0]] && app.pressed[keys[1]] && app.pressed[keys[2]],
+            "Left and right physical modifiers must both hold their shared legacy alias");
+        app.DeviceInput(first, keys[0], false);
+        Check(!app.pressed[keys[0]] && app.pressed[keys[1]] && app.pressed[keys[2]],
+            "Releasing the left modifier must retain the right modifier and shared alias");
+        app.DeviceInput(first, keys[1], false);
+        Check(!app.pressed[keys[0]] && !app.pressed[keys[1]] && !app.pressed[keys[2]],
+            "Releasing both modifier sides must clear their shared alias");
+        app.DeviceInput(first, keys[0], true);
+        app.DeviceInput(second, keys[0], true);
+        app.DeviceInput(first, keys[0], false);
+        Check(app.pressed[keys[0]] && app.pressed[keys[2]],
+            "A modifier held on another input device must survive the first device release");
+        app.DeviceInput(second, keys[0], false);
+        Check(!app.pressed[keys[0]] && !app.pressed[keys[2]],
+            "The final device release must clear both physical and generic modifier state");
+    }
+    app.ResetInputs();
+    app.DeviceInput(first, VK_RETURN, true);
+    app.DeviceInput(first, NumpadEnter, true);
+    app.DeviceInput(first, VK_RETURN, false);
+    Check(!app.pressed[VK_RETURN] && app.pressed[NumpadEnter], "Releasing main Enter must not release numpad Enter");
+    app.DeviceInput(first, NumpadEnter, false);
+    Check(!app.pressed[NumpadEnter], "Releasing numpad Enter must clear its independent state");
+    app.ResetInputs();
+}
 
 void TestControllerAppearance(Harness& harness, HWND allowedWindow) {
     auto& app = harness.app;
@@ -710,6 +921,8 @@ void RunTests() {
         app.settings.monitor == beforeGradient.monitor && app.settings.scale == beforeGradient.scale && app.settings.opacity == beforeGradient.opacity &&
         app.settings.accent == beforeGradient.accent && app.settings.isoLayout == beforeGradient.isoLayout,
         "Gradient editing and reset must preserve application restrictions, visibility, layout, position, size, overall opacity, and pressed accent");
+    TestKeyboardForms(harness);
+    TestPhysicalModifierState(harness);
     TestControllerAppearance(harness, allowed.window);
     TestOriginalOpacity(harness);
     TestControllerInputSelection(harness);

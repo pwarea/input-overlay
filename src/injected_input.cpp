@@ -1,4 +1,5 @@
 #include "injected_input.hpp"
+#include "keyboard_input.hpp"
 
 namespace input_overlay {
 namespace { thread_local InjectedInput* current = nullptr; }
@@ -31,11 +32,8 @@ LRESULT CALLBACK InjectedInput::Keyboard(int code, WPARAM message, LPARAM data) 
     if (code == HC_ACTION && current) {
         const auto& key = *reinterpret_cast<KBDLLHOOKSTRUCT*>(data);
         if (key.flags & LLKHF_INJECTED) {
-            UINT vk = key.vkCode;
-            if (vk == VK_SHIFT) vk = MapVirtualKeyW(key.scanCode, MAPVK_VSC_TO_VK_EX);
-            if (vk == VK_CONTROL) vk = key.flags & LLKHF_EXTENDED ? VK_RCONTROL : VK_LCONTROL;
-            if (vk == VK_MENU) vk = key.flags & LLKHF_EXTENDED ? VK_RMENU : VK_LMENU;
-            current->Post(static_cast<int>(vk), !(key.flags & LLKHF_UP));
+            const int input = NormalizeKeyboardInput(key.vkCode, key.scanCode, (key.flags & LLKHF_EXTENDED) != 0);
+            if (input != InputNone) current->Post(input, !(key.flags & LLKHF_UP));
         }
     }
     return CallNextHookEx(nullptr, code, message, data);
