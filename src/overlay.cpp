@@ -562,7 +562,8 @@ void DrawOverlaySurface(Gdiplus::Bitmap& surface, const Settings& settings,
 
 }
 
-void DrawOverlayPreview(HDC dc, const RECT& bounds, const Settings& settings, bool pressed, bool lightBackground) {
+void DrawOverlayPreview(HDC dc, const RECT& bounds, const Settings& settings, bool pressed, bool lightBackground,
+    const ControllerState* liveController) {
     const int width = bounds.right - bounds.left, height = bounds.bottom - bounds.top;
     if (!dc || width <= 0 || height <= 0) return;
     Gdiplus::Graphics scene(dc);
@@ -617,7 +618,7 @@ void DrawOverlayPreview(HDC dc, const RECT& bounds, const Settings& settings, bo
             controller.buttons = 0x1000;
             controller.leftTrigger = 1.0f;
         }
-        DrawDevice(graphics, settings, inputs, controller);
+        DrawDevice(graphics, settings, inputs, liveController ? *liveController : controller);
         graphics.Flush(Gdiplus::FlushIntentionSync);
     }
     Gdiplus::ColorMatrix opacity = {{{1, 0, 0, 0, 0}, {0, 1, 0, 0, 0}, {0, 0, 1, 0, 0},

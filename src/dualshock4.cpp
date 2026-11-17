@@ -18,11 +18,11 @@ constexpr std::size_t MaximumReportBytes = 1024;
 constexpr ULONGLONG DiscoveryInterval = 2000;
 constexpr DWORD ReadInterval = 16;
 
-bool IsDualShock4(HANDLE handle) {
+PlayStationProtocol DeviceProtocol(HANDLE handle) {
     HIDD_ATTRIBUTES attributes{};
     attributes.Size = sizeof(attributes);
-    return HidD_GetAttributes(handle, &attributes) && attributes.VendorID == 0x054c &&
-        (attributes.ProductID == 0x05c4 || attributes.ProductID == 0x09cc);
+    return HidD_GetAttributes(handle, &attributes) ?
+        IdentifyPlayStationController(attributes.VendorID, attributes.ProductID) : PlayStationProtocol::Unsupported;
 }
 
 std::uint32_t UpdateCrc(std::uint32_t value, std::uint8_t byte) {
@@ -31,6 +31,16 @@ std::uint32_t UpdateCrc(std::uint32_t value, std::uint8_t byte) {
         value = (value >> 1) ^ (0xedb88320u & (0u - (value & 1u)));
     }
     return value;
+}
+
+bool ValidBluetoothChecksum(const std::uint8_t* bytes) {
+    auto crc = UpdateCrc(0xffffffffu, 0xa1);
+    for (std::size_t index = 0; index < 74; ++index) crc = UpdateCrc(crc, bytes[index]);
+    const auto received = static_cast<std::uint32_t>(bytes[74]) |
+        (static_cast<std::uint32_t>(bytes[75]) << 8) |
+        (static_cast<std::uint32_t>(bytes[76]) << 16) |
+        (static_cast<std::uint32_t>(bytes[77]) << 24);
+    return ~crc == received;
 }
 
 std::int16_t ConvertAxis(std::uint8_t value, bool invert) {
@@ -47,6 +57,7 @@ struct HidDevice {
     OVERLAPPED operation{};
     std::array<std::uint8_t, MaximumReportBytes> bytes{};
     DWORD reportLength = 0;
+    PlayStationProtocol protocol = PlayStationProtocol::Unsupported;
     bool pending = false;
     bool valid = false;
     ULONGLONG openedAt = 0;
@@ -84,7 +95,7 @@ struct HidDevice {
             }
             if (count == 0 || count > reportLength) return false;
             ControllerRawState parsed;
-            if (ParseDualShock4Report(bytes.data(), count, parsed)) {
+            if (ParsePlayStationReport(protocol, bytes.data(), count, parsed)) {
                 state = parsed;
                 valid = true;
             }
@@ -98,7 +109,8 @@ std::unique_ptr<HidDevice> OpenDevice(const std::wstring& path) {
     device->handle = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
         nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
     if (device->handle == INVALID_HANDLE_VALUE) return {};
-    if (!IsDualShock4(device->handle)) return {};
+    device->protocol = DeviceProtocol(device->handle);
+    if (device->protocol == PlayStationProtocol::Unsupported) return {};
     PHIDP_PREPARSED_DATA data = nullptr;
     if (!HidD_GetPreparsedData(device->handle, &data)) return {};
     HIDP_CAPS caps{};
@@ -138,7 +150,7 @@ std::vector<std::wstring> DevicePaths(HANDLE control) {
             const auto metadata = CreateFileW(path.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE,
                 nullptr, OPEN_EXISTING, 0, nullptr);
             if (metadata == INVALID_HANDLE_VALUE) continue;
-            const bool supported = IsDualShock4(metadata);
+            const bool supported = DeviceProtocol(metadata) != PlayStationProtocol::Unsupported;
             CloseHandle(metadata);
             if (!supported) continue;
             paths.push_back(std::move(path));
@@ -154,6 +166,15 @@ std::vector<std::wstring> DevicePaths(HANDLE control) {
 }
 }
 
+PlayStationProtocol IdentifyPlayStationController(std::uint16_t vendor, std::uint16_t product) {
+    if (vendor != 0x054c) return PlayStationProtocol::Unsupported;
+    switch (product) {
+    case 0x05c4: case 0x09cc: return PlayStationProtocol::DualShock4;
+    case 0x0ce6: case 0x0df2: return PlayStationProtocol::DualSense;
+    default: return PlayStationProtocol::Unsupported;
+    }
+}
+
 bool ParseDualShock4Report(const std::uint8_t* bytes, std::size_t size, ControllerRawState& result) {
     if (!bytes || size < 10 || size > MaximumReportBytes) return false;
     std::size_t offset = 1;
@@ -161,13 +182,7 @@ bool ParseDualShock4Report(const std::uint8_t* bytes, std::size_t size, Controll
         if (size != 10 && size < 64) return false;
     } else if (bytes[0] >= 0x11 && bytes[0] <= 0x19) {
         if (size < 78 || !(bytes[1] & 0x80)) return false;
-        auto crc = UpdateCrc(0xffffffffu, 0xa1);
-        for (std::size_t index = 0; index < 74; ++index) crc = UpdateCrc(crc, bytes[index]);
-        const auto received = static_cast<std::uint32_t>(bytes[74]) |
-            (static_cast<std::uint32_t>(bytes[75]) << 8) |
-            (static_cast<std::uint32_t>(bytes[76]) << 16) |
-            (static_cast<std::uint32_t>(bytes[77]) << 24);
-        if (~crc != received) return false;
+        if (!ValidBluetoothChecksum(bytes)) return false;
         offset = 3;
     } else {
         return false;
@@ -195,6 +210,32 @@ bool ParseDualShock4Report(const std::uint8_t* bytes, std::size_t size, Controll
     parsed.rightTrigger = data[8];
     result = parsed;
     return true;
+}
+
+bool ParseDualSenseReport(const std::uint8_t* bytes, std::size_t size, ControllerRawState& result) {
+    if (!bytes || size < 10 || size > MaximumReportBytes) return false;
+    if (bytes[0] == 0x01 && (size == 10 || size == 78))
+        return ParseDualShock4Report(bytes, size, result);
+    std::size_t offset = 1;
+    if (bytes[0] == 0x01) {
+        if (size != 64) return false;
+    } else if (bytes[0] == 0x31) {
+        if (size < 78 || !ValidBluetoothChecksum(bytes)) return false;
+        offset = 2;
+    } else {
+        return false;
+    }
+    const auto* data = bytes + offset;
+    const std::array<std::uint8_t, 10> controls{
+        0x01, data[0], data[1], data[2], data[3], data[7], data[8], data[9], data[4], data[5]};
+    return ParseDualShock4Report(controls.data(), controls.size(), result);
+}
+
+bool ParsePlayStationReport(PlayStationProtocol protocol, const std::uint8_t* bytes,
+                           std::size_t size, ControllerRawState& result) {
+    if (protocol == PlayStationProtocol::DualShock4) return ParseDualShock4Report(bytes, size, result);
+    if (protocol == PlayStationProtocol::DualSense) return ParseDualSenseReport(bytes, size, result);
+    return false;
 }
 
 struct DualShock4Provider::Shared {

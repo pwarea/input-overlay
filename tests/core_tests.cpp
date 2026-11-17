@@ -92,7 +92,7 @@ void TestNormalization() {
     input_overlay::NormalizeSettings(settings);
     Check(settings.x == 0 && settings.y == 32767, "Anchor margins must be nonnegative and bounded");
     Check(settings.scale == 10 && settings.controllerScale == 200 && settings.opacity == 100, "Visual bounds must clamp independently");
-    Check(settings.hotkeyVk == VK_F10 && settings.hotkeyModifiers == (MOD_CONTROL | MOD_ALT), "Invalid shortcut needs safe default");
+    Check(settings.hotkeyVk == VK_F8 && settings.hotkeyModifiers == 0, "Invalid shortcut needs safe default");
     Check(settings.slots[1].input == VK_LSHIFT && settings.slots[2].input == VK_RSHIFT && settings.slots[ShiftSlot].input == 0 &&
         settings.slots[input_overlay::keyboard::RightShift].input == 0, "Duplicate physical modifiers must normalize without collapsing left and right");
     Check(settings.slots[3].input == 0, "Invalid input must become unbound");
@@ -610,6 +610,52 @@ void TestPersistence(const TemporaryDirectory& temp) {
     if (search != INVALID_HANDLE_VALUE) FindClose(search);
     Check(search == INVALID_HANDLE_VALUE, "Save must not leave temporary files");
     Check(!input_overlay::SaveSettings(temp.File(L"missing\\settings.ini"), settings), "Unwritable destination must report failure");
+}
+
+void TestVisibilityHotkeyPreferences(const TemporaryDirectory& temp) {
+    using namespace input_overlay;
+    auto settings = DefaultSettings();
+    Check(settings.hotkeyVk == VK_F8 && settings.hotkeyModifiers == 0 && HotkeyName(0, VK_F8) == L"F8",
+        "New installations must have an unmodified F8 visibility shortcut");
+    settings.hotkeyVk = VK_F10; settings.hotkeyModifiers = MOD_CONTROL | MOD_ALT;
+    Check(!LoadSettings(temp.File(L"missing-shortcut.ini"), settings) &&
+        settings.hotkeyVk == VK_F8 && settings.hotkeyModifiers == 0,
+        "A missing settings file must restore the default visibility shortcut");
+    const auto file = temp.File(L"shortcut.ini");
+    WriteBytes(file, "[General]\nenabled=0\nonlySelectedApps=1\nstartMinimized=1\nscale=75\n");
+    Check(LoadSettings(file, settings) && settings.hotkeyVk == VK_F8 && settings.hotkeyModifiers == 0 &&
+        !settings.enabled && settings.onlySelectedApps && settings.startMinimized && settings.scale == 75,
+        "Settings without shortcut keys must use F8 while preserving other preferences");
+    WriteBytes(file, "[General]\nenabled=0\nonlySelectedApps=1\nhotkeyModifiers=3\nhotkeyVk=121\n");
+    Check(LoadSettings(file, settings) && settings.hotkeyVk == VK_F10 &&
+        settings.hotkeyModifiers == (MOD_CONTROL | MOD_ALT),
+        "An explicitly saved legacy Ctrl+Alt+F10 shortcut must not be replaced by the new default");
+    settings.applications = {L"C:\\Games\\game.exe"};
+    settings.keyboardForm = KeyboardForm::FullSize;
+    settings.controllerScale = 157;
+    BindInput(settings, SideSlot, 'Q');
+    const std::pair<UINT, UINT> shortcuts[] = {
+        {MOD_CONTROL | MOD_ALT, VK_F10}, {MOD_SHIFT, VK_F8}, {MOD_WIN | MOD_CONTROL, 'K'}, {0, VK_F8}
+    };
+    for (const auto& shortcut : shortcuts) {
+        settings.hotkeyModifiers = shortcut.first;
+        settings.hotkeyVk = shortcut.second;
+        Settings restored;
+        Check(SaveSettings(file, settings) && LoadSettings(file, restored) &&
+            restored.hotkeyModifiers == shortcut.first && restored.hotkeyVk == shortcut.second,
+            "Legacy, custom and reset-to-F8 shortcuts must survive restarting");
+        Check(!restored.enabled && restored.onlySelectedApps && restored.applications == settings.applications &&
+            restored.keyboardForm == KeyboardForm::FullSize && restored.controllerScale == 157 &&
+            restored.slots[SideSlot].input == 'Q' && restored.slots[QSlot].input == InputNone,
+            "Changing the shortcut must preserve visibility, filters, layouts, controller size and remappings");
+    }
+    for (const UINT invalid : {UINT{0}, UINT{7}, UINT{VK_RCONTROL}, UINT{NumpadEnter}, UINT{MouseSide1}}) {
+        settings.hotkeyVk = invalid;
+        settings.hotkeyModifiers = MOD_ALT;
+        NormalizeSettings(settings);
+        Check(settings.hotkeyVk == VK_F8 && settings.hotkeyModifiers == 0,
+            "Invalid, modifier-only and non-keyboard shortcuts must recover to unmodified F8");
+    }
 }
 
 void TestStyles(const TemporaryDirectory& temp) {
@@ -1248,7 +1294,7 @@ void TestMalformed(const TemporaryDirectory& temp) {
     Check(settings.slots[QSlot].label == L"Q", "Malformed escaped label must preserve default");
     Check(settings.slots[QSlot].input == 'Q' && settings.slots[8].input == 0, "Duplicate stored bindings must be removed");
     Check(settings.slots[9].input == 'E' && settings.slots[34].input == 0, "Invalid stored input should preserve default, zero should unbind");
-    Check(settings.hotkeyVk == VK_F10 && settings.hotkeyModifiers == (MOD_CONTROL | MOD_ALT), "Invalid hotkey must recover");
+    Check(settings.hotkeyVk == VK_F8 && settings.hotkeyModifiers == 0, "Invalid hotkey must recover");
     Check(settings.onlySelectedApps && settings.applications.empty(), "Malformed app list must keep restrictive mode");
     Check(!input_overlay::MatchesApplication(settings, L"C:\\game.exe"), "Corrupt allowlist must not permit all apps");
     WriteBytes(file, std::string("\xff\xff", 2));
@@ -1276,6 +1322,7 @@ int main() {
         TestControllerViewport();
         TestControllerPositionMigration(temp);
         TestPersistence(temp);
+        TestVisibilityHotkeyPreferences(temp);
         TestStyles(temp);
         TestColorSettings(temp);
         TestGradientPalettes();

@@ -21,13 +21,13 @@ enum ControlId {
     NavOverlay = 100, NavBindings, NavApplications, NavGeneral, NavController, NavUpdates, NavLayout,
     Enabled = 200, MouseVisible, Scale, ScaleValue, Opacity, OpacityValue,
     MoveOverlay, Layout, ResetPosition, OpenLayout, AccentFirst = 220, AccentLast = 224, StyleFirst = 230, StyleLast = StyleFirst + OverlayStyleCount - 1,
-    OverlayPreview = 240, PreviewIdle, PreviewPressed, PreviewBackground, PreviewLayout, AppearanceDevice, OpenKeyboardLayout,
+    OverlayPreview = 240, PreviewIdle, PreviewPressed, PreviewBackground, PreviewLayout, AppearanceDevice, OpenKeyboardLayout, OpenAppearance, OpenShortcut,
     KeyboardFormFirst = 260, KeyboardFormLast = KeyboardFormFirst + KeyboardFormCount - 1,
     SlotList = 300, SlotTitle, SlotVisible, LabelEdit, SaveLabel, InputValue, RecordInput, UnbindInput, ResetBinding,
     RestrictApps = 400, WindowList, RefreshWindows, AddWindow, AllowedList, RemoveApp, WindowPath,
-    HotkeyValue = 500, ModCtrl, ModAlt, ModShift, ModWin, RecordHotkey, Startup, StartMinimized,
-    ControllerMode = 600, ControllerLayoutChoice, ControllerIndex, ControllerDeadzone, ControllerDeadzoneValue,
-    ControllerAppearance, ResetControllerStyle, ControllerScale, ControllerScaleValue, ResetControllerSize,
+    HotkeyValue = 500, ModCtrl, ModAlt, ModShift, ModWin, RecordHotkey, Startup, StartMinimized, ResetHotkey,
+    ControllerLayoutChoice = 601, ControllerIndex, ControllerDeadzone, ControllerDeadzoneValue,
+    ResetControllerStyle = 606, ControllerScale, ControllerScaleValue, ResetControllerSize, ControllerConnection,
     ControllerStyleFirst = 620, ControllerStyleLast = ControllerStyleFirst + ControllerStyleCount - 1,
     OriginalOpacityControl = 640, OriginalOpacityValue, OriginalSolid, OriginalTransparent, ResetOriginalOpacity,
     AutoCheckUpdates = 700, CheckUpdates, InstallUpdate, UpdateVersion, UpdateMessage, UpdateNotesTitle, UpdateNotes,
@@ -59,9 +59,12 @@ struct UiState {
     bool previewPressed = false, previewLight = false, previewIso = false;
     bool appearanceController = false;
     ControllerLayout previewControllerLayout = ControllerLayout::Xbox;
+    ControllerState previewControllerState;
+    bool previewControllerStateValid = false;
     std::wstring status;
 };
 UiState ui;
+bool OverlayPage(int page) { return page == 0 || page == 4 || page == 6; }
 bool GradientAppearance(const Settings& settings, bool controller) {
     return controller ? settings.controllerStyle == ControllerStyle::Prism : settings.style == OverlayStyle::Gradient;
 }
@@ -250,7 +253,7 @@ bool SettingsWindow::Show(Application& app) {
     }
     ShowWindow(hwnd_, SW_RESTORE);
     if (FitWindow(hwnd_, WindowDpi(hwnd_))) { CreateFonts(); Build(); }
-    Refresh(); SetForegroundWindow(hwnd_); return true;
+    Refresh(); SetForegroundWindow(hwnd_); app_->UpdateVisibility(); return true;
 }
 bool SettingsWindow::ShowUpdates(Application& app) {
     if (!Show(app)) return false;
@@ -262,6 +265,7 @@ void SettingsWindow::Destroy() { if (hwnd_) DestroyWindow(hwnd_); hwnd_ = nullpt
 
 void SettingsWindow::Build() {
     ui.updating = true;
+    ui.previewControllerStateValid = false;
     for (HWND control : controls_) DestroyWindow(control);
     controls_.clear();
     auto add = [&](const wchar_t* className, const wchar_t* label, DWORD style,
@@ -291,26 +295,31 @@ void SettingsWindow::Build() {
             x, y, width, height, id, nullptr, WS_EX_CLIENTEDGE);
         SetWindowTheme(control, L"", L""); return control;
     };
-    constexpr int order[] = {0, 6, 1, 2, 3, 4, 5};
-    for (int i = 0; i < 7; ++i) button(PageTitles[order[i]], 16, 126 + i * 49, 152, 40, NavOverlay + order[i]);
+    constexpr int order[] = {0, 1, 2, 3, 5};
+    for (int i = 0; i < 5; ++i) button(PageTitles[order[i]], 16, 126 + i * 49, 152, 40, NavOverlay + order[i]);
     button(L"Exit Input Overlay", 16, 570, 152, 36, ExitApp);
     text(L"Changes save automatically.", 216, 638, 400, 20, 0, true, ui.smallFont);
     text(ui.status.c_str(), 216, 613, 578, 22, Status, true, ui.smallFont);
-    if (page_ == 0) {
-        text(L"Visual style", 216, 113, 152, 25, 0, false, ui.heading);
-        HWND appearance = add(L"COMBOBOX", L"Appearance device", WS_TABSTOP | CBS_DROPDOWNLIST, 386, 110, 246, 120, AppearanceDevice);
-        SendMessageW(appearance, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Keyboard & mouse"));
+    if (OverlayPage(page_)) {
+        HWND appearance = add(L"COMBOBOX", L"Overlay device", WS_TABSTOP | CBS_DROPDOWNLIST, 216, 110, 264, 120, AppearanceDevice);
+        SendMessageW(appearance, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Keyboard & Mouse"));
         SendMessageW(appearance, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Controller"));
-        button(L"Size & position", 650, 108, 144, 30, OpenLayout);
+        checkbox(L"Show overlay", 498, 113, 124, Enabled);
+        HWND shortcut = button(L"", 630, 109, 164, 30, OpenShortcut);
+        SendMessageW(shortcut, WM_SETFONT, reinterpret_cast<WPARAM>(ui.smallFont), TRUE);
+        button(L"Layout & input", 216, 153, 280, 34, OpenLayout);
+        button(L"Appearance", 514, 153, 280, 34, OpenAppearance);
+    }
+    if (page_ == 0) {
         if (ui.appearanceController) {
-            for (int i = 0; i < ControllerStyleCount; ++i) button(ControllerStyleNames[i], 216 + i * 98, 149, 88, 36, ControllerStyleFirst + i);
-            button(L"Reset style", 663, 149, 131, 36, ResetControllerStyle);
+            for (int i = 0; i < ControllerStyleCount; ++i) button(ControllerStyleNames[i], 216 + i * 98, 199, 88, 36, ControllerStyleFirst + i);
+            button(L"Reset style", 663, 199, 131, 36, ResetControllerStyle);
         } else {
-            for (int i = 0; i < OverlayStyleCount; ++i) button(StyleNames[i], 216 + i * 98, 149, 88, 36, StyleFirst + i);
+            for (int i = 0; i < OverlayStyleCount; ++i) button(StyleNames[i], 216 + i * 98, 199, 88, 36, StyleFirst + i);
         }
-        add(L"STATIC", L"Overlay appearance preview", SS_OWNERDRAW, 216, 198, 578, 176, OverlayPreview);
-        button(L"Idle", 216, 382, 62, 30, PreviewIdle);
-        button(L"Pressed", 286, 382, 80, 30, PreviewPressed);
+        add(L"STATIC", L"Overlay appearance preview", SS_OWNERDRAW, 216, 245, 578, 129, OverlayPreview);
+        button(ui.appearanceController ? L"Live input" : L"Idle", 216, 382, 94, 30, PreviewIdle);
+        button(L"Pressed", 318, 382, 80, 30, PreviewPressed);
         button(L"Dark background", 418, 382, 158, 30, PreviewBackground);
         text(L"Preview", 598, 387, 51, 22, 0, true, ui.smallFont);
         HWND previewLayout = add(L"COMBOBOX", L"Preview layout", WS_TABSTOP | CBS_DROPDOWNLIST, 658, 383, 136, 120, PreviewLayout);
@@ -391,7 +400,9 @@ void SettingsWindow::Build() {
         checkbox(L"Ctrl", 216, 197, 94, ModCtrl); checkbox(L"Alt", 320, 197, 94, ModAlt);
         checkbox(L"Shift", 424, 197, 94, ModShift); checkbox(L"Win", 528, 197, 94, ModWin);
         button(L"Record shortcut", 216, 244, 187, 38, RecordHotkey, true);
-        text(L"Choose the modifiers above, then record a keyboard key. The shortcut shows or hides the overlay instantly.", 216, 299, 578, 49, 0, true);
+        button(L"Reset to F8", 416, 244, 132, 38, ResetHotkey);
+        text(L"To set a key combination, start recording, select the modifiers, and press the key.",
+            216, 299, 578, 49, 0, true);
         text(L"Startup", 216, 367, 578, 26, 0, false, ui.heading);
         checkbox(L"Run at startup", 216, 407, 276, Startup);
         checkbox(L"Start minimized", 516, 407, 278, StartMinimized);
@@ -401,43 +412,45 @@ void SettingsWindow::Build() {
         text(L"Works above normal and borderless full-screen windows. Exclusive full-screen games may cover desktop overlays; choose borderless mode in the game.",
             216, 531, 578, 49, 0, true);
     } else if (page_ == 4) {
-        checkbox(L"Show controller instead of keyboard and mouse", 216, 113, 578, ControllerMode);
-        for (int i = 0; i < ControllerStyleCount; ++i) button(ControllerStyleNames[i], 216 + i * 98, 153, 88, 36, ControllerStyleFirst + i);
-        button(app_->settings.controllerStyle == ControllerStyle::Original ? L"Opacity" : L"Colors", 614, 153, 80, 36, ControllerAppearance);
-        button(L"Reset style", 704, 153, 90, 36, ResetControllerStyle);
-        add(L"STATIC", L"Controller appearance preview", SS_OWNERDRAW, 216, 201, 578, 164, OverlayPreview);
-        button(L"Idle", 216, 375, 62, 30, PreviewIdle);
-        button(L"Pressed", 286, 375, 80, 30, PreviewPressed);
-        button(L"Dark background", 418, 375, 158, 30, PreviewBackground);
-        text(L"Layout", 598, 380, 51, 22, 0, true, ui.smallFont);
-        HWND layout = add(L"COMBOBOX", L"Controller layout", WS_TABSTOP | CBS_DROPDOWNLIST, 658, 376, 136, 120, ControllerLayoutChoice);
+        text(L"Controller layout", 216, 213, 276, 25, 0, false, ui.heading);
+        HWND layout = add(L"COMBOBOX", L"Controller layout", WS_TABSTOP | CBS_DROPDOWNLIST, 498, 210, 296, 120, ControllerLayoutChoice);
         SendMessageW(layout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Xbox"));
         SendMessageW(layout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"DualSense"));
         SendMessageW(layout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"DualShock 4"));
-        text(L"Controller size", 216, 428, 188, 25, 0, false, ui.heading);
-        text(L"", 424, 428, 70, 24, ControllerScaleValue, true);
-        button(L"Reset size", 516, 422, 126, 32, ResetControllerSize);
-        button(L"Move overlay", 654, 422, 140, 32, MoveOverlay);
-        HWND scale = add(TRACKBAR_CLASSW, L"Controller size", WS_TABSTOP | TBS_HORZ | TBS_NOTICKS,
-            208, 461, 590, 30, ControllerScale);
-        SendMessageW(scale, TBM_SETRANGE, TRUE, MAKELPARAM(10, 200));
-        SendMessageW(scale, TBM_SETPAGESIZE, 0, 10);
-        text(L"Input device", 216, 514, 126, 25, 0, false, ui.heading);
+        text(L"Input device", 216, 263, 126, 25, 0, false, ui.heading);
         HWND controller = add(L"COMBOBOX", L"Controller", WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
-            354, 511, 140, 190, ControllerIndex);
+            354, 260, 254, 190, ControllerIndex);
         SendMessageW(controller, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Auto"));
         for (int i = 0; i < ControllerSlotCount; ++i) {
             const std::wstring label = i < XInputSlotCount ? L"XInput " + std::to_wstring(i + 1) :
-                L"DualShock 4 " + std::to_wstring(i - XInputSlotCount + 1);
+                L"PlayStation " + std::to_wstring(i - XInputSlotCount + 1);
             SendMessageW(controller, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label.c_str()));
         }
-        text(L"Auto uses XInput or native DualShock 4. Layout changes the appearance only.", 216, 551, 278, 49, 0, true, ui.smallFont);
-        text(L"Stick deadzone", 516, 514, 194, 25, 0, false, ui.heading);
-        text(L"", 724, 514, 70, 24, ControllerDeadzoneValue, true);
+        text(L"", 624, 264, 170, 32, ControllerConnection, true, ui.smallFont);
+        text(L"Size", 216, 318, 114, 25, 0, false, ui.heading);
+        text(L"", 342, 318, 54, 24, ControllerScaleValue, true);
+        HWND scale = add(TRACKBAR_CLASSW, L"Controller size", WS_TABSTOP | TBS_HORZ | TBS_NOTICKS,
+            208, 350, 196, 30, ControllerScale);
+        SendMessageW(scale, TBM_SETRANGE, TRUE, MAKELPARAM(10, 200));
+        SendMessageW(scale, TBM_SETPAGESIZE, 0, 10);
+        text(L"Deadzone", 412, 318, 116, 25, 0, false, ui.heading);
+        text(L"", 540, 318, 52, 24, ControllerDeadzoneValue, true);
         HWND deadzone = add(TRACKBAR_CLASSW, L"Stick deadzone", WS_TABSTOP | TBS_HORZ | TBS_NOTICKS,
-            508, 548, 290, 30, ControllerDeadzone);
+            404, 350, 196, 30, ControllerDeadzone);
         SendMessageW(deadzone, TBM_SETRANGE, TRUE, MAKELPARAM(0, 40));
         SendMessageW(deadzone, TBM_SETPAGESIZE, 0, 5);
+        const bool original = app_->settings.controllerStyle == ControllerStyle::Original;
+        text(L"Opacity", 608, 318, 116, 25, 0, false, ui.heading);
+        text(L"", 736, 318, 58, 24, original ? OriginalOpacityValue : OpacityValue, true);
+        HWND opacity = add(TRACKBAR_CLASSW, L"Controller opacity", WS_TABSTOP | TBS_HORZ | TBS_NOTICKS,
+            600, 350, 202, 30, original ? OriginalOpacityControl : Opacity);
+        SendMessageW(opacity, TBM_SETRANGE, TRUE, MAKELPARAM(15, 100));
+        SendMessageW(opacity, TBM_SETPAGESIZE, 0, 5);
+        add(L"STATIC", L"Live controller preview", SS_OWNERDRAW, 216, 393, 578, 120, OverlayPreview);
+        button(L"Move overlay", 216, 529, 174, 34, MoveOverlay);
+        button(L"Reset size", 402, 529, 126, 34, ResetControllerSize);
+        button(L"Reset position and size", 540, 529, 254, 34, ResetPosition);
+        text(L"Auto uses XInput or native DualShock 4 / DualSense. Layout changes appearance only.", 216, 581, 578, 28, 0, true, ui.smallFont);
     } else if (page_ == 5) {
         text(L"Installed version", 216, 115, 578, 25, 0, false, ui.heading);
         text(L"", 216, 151, 578, 29, UpdateVersion, true);
@@ -453,42 +466,60 @@ void SettingsWindow::Build() {
         SendMessageW(notes, EM_SETLIMITTEXT, 262144, 0);
         SetWindowTheme(notes, L"", L"");
     } else if (page_ == 6) {
-        checkbox(L"Show overlay", 216, 113, 230, Enabled);
-        checkbox(L"Show mouse", 498, 113, 230, MouseVisible);
-        text(L"Keyboard layout", 216, 164, 276, 25, 0, false, ui.heading);
-        HWND layout = add(L"COMBOBOX", L"Keyboard layout", WS_TABSTOP | CBS_DROPDOWNLIST, 498, 160, 296, 120, Layout);
+        text(L"Keyboard layout", 216, 213, 218, 25, 0, false, ui.heading);
+        checkbox(L"Show mouse", 462, 211, 168, MouseVisible);
+        HWND layout = add(L"COMBOBOX", L"Keyboard layout", WS_TABSTOP | CBS_DROPDOWNLIST, 650, 210, 144, 120, Layout);
         SendMessageW(layout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"ANSI"));
         SendMessageW(layout, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"ISO"));
         for (int form = 0; form < KeyboardFormCount; ++form)
-            button(KeyboardFormNames[form], 216 + form * 147, 203, 137, 36, KeyboardFormFirst + form);
-        text(L"Keyboard size", 216, 275, 188, 24, 0, false, ui.heading);
-        text(L"", 424, 275, 80, 24, ScaleValue, true);
-        HWND scale = add(TRACKBAR_CLASSW, L"Keyboard and mouse size", WS_TABSTOP | TBS_HORZ | TBS_NOTICKS, 208, 307, 280, 34, Scale);
+            button(KeyboardFormNames[form], 216 + form * 147, 253, 137, 36, KeyboardFormFirst + form);
+        text(L"Keyboard size", 216, 318, 188, 24, 0, false, ui.heading);
+        text(L"", 424, 318, 80, 24, ScaleValue, true);
+        HWND scale = add(TRACKBAR_CLASSW, L"Keyboard and mouse size", WS_TABSTOP | TBS_HORZ | TBS_NOTICKS, 208, 350, 280, 34, Scale);
         SendMessageW(scale, TBM_SETRANGE, TRUE, MAKELPARAM(10, 200)); SendMessageW(scale, TBM_SETPAGESIZE, 0, 10);
-        text(L"Overall opacity", 516, 275, 188, 24, 0, false, ui.heading);
-        text(L"", 724, 275, 70, 24, OpacityValue, true);
-        HWND opacity = add(TRACKBAR_CLASSW, L"Overlay opacity", WS_TABSTOP | TBS_HORZ | TBS_NOTICKS, 508, 307, 290, 34, Opacity);
+        text(L"Opacity", 516, 318, 188, 24, 0, false, ui.heading);
+        text(L"", 724, 318, 70, 24, OpacityValue, true);
+        HWND opacity = add(TRACKBAR_CLASSW, L"Overlay opacity", WS_TABSTOP | TBS_HORZ | TBS_NOTICKS, 508, 350, 290, 34, Opacity);
         SendMessageW(opacity, TBM_SETRANGE, TRUE, MAKELPARAM(15, 100)); SendMessageW(opacity, TBM_SETPAGESIZE, 0, 5);
-        text(L"Position", 216, 382, 578, 25, 0, false, ui.heading);
-        button(L"Move overlay", 216, 423, 174, 38, MoveOverlay);
-        button(L"Reset position and size", 406, 423, 212, 38, ResetPosition);
+        text(L"Position", 216, 424, 578, 25, 0, false, ui.heading);
+        button(L"Move overlay", 216, 464, 174, 38, MoveOverlay);
+        button(L"Reset position and size", 406, 464, 212, 38, ResetPosition);
         text(L"Drag the overlay, then select Done moving. Switching to another application ends moving automatically.",
-            216, 480, 578, 45, 0, true);
-        text(L"Controller size is saved on the Controller page. Original has its own opacity under Controller > Opacity; this opacity applies to all other styles. Reset restores keyboard size to 100% and the shared position to the bottom-left corner.",
-            216, 543, 578, 61, 0, true, ui.smallFont);
+            216, 538, 578, 45, 0, true);
     }
     ui.updating = false; UpdateControls(); InvalidateRect(hwnd_, nullptr, TRUE);
 }
 
 void SettingsWindow::SelectPage(int page) {
-    if (page < 0 || page > 6 || page == page_) return;
+    if (page < 0 || page > 6) return;
+    const bool controller = page == 4 || (page == 0 && app_->settings.device == OverlayDevice::Controller);
+    const bool changeDevice = (page == 4 || page == 6) &&
+        app_->settings.device != (controller ? OverlayDevice::Controller : OverlayDevice::KeyboardMouse);
+    if (page == page_ && !changeDevice) return;
     if (app_->overlay.Editing()) app_->EditPosition(false);
-    CancelCapture(); page_ = page; ui.status.clear(); Build(); SetFocus(GetDlgItem(hwnd_, NavOverlay + page_));
+    CancelCapture();
+    if (OverlayPage(page)) ui.appearanceController = controller;
+    if (changeDevice) {
+        app_->settings.device = controller ? OverlayDevice::Controller : OverlayDevice::KeyboardMouse;
+        ui.previewPressed = false;
+    }
+    page_ = page;
+    ui.status.clear(); Build();
+    SetFocus(GetDlgItem(hwnd_, OverlayPage(page_) ? NavOverlay : NavOverlay + page_));
+    if (changeDevice) app_->Changed();
+    else app_->UpdateVisibility();
 }
 void SettingsWindow::UpdateControls() {
     if (!hwnd_ || !app_ || ui.updating) return;
     ui.updating = true;
     Settings& settings = app_->settings;
+    if (OverlayPage(page_)) {
+        SendDlgItemMessageW(hwnd_, AppearanceDevice, CB_SETCURSEL, ui.appearanceController ? 1 : 0, 0);
+        Check(hwnd_, Enabled, settings.enabled);
+        SetText(hwnd_, OpenShortcut, L"Shortcut: " + HotkeyName(settings.hotkeyModifiers, settings.hotkeyVk));
+        InvalidateControl(hwnd_, OpenLayout);
+        InvalidateControl(hwnd_, OpenAppearance);
+    }
     if (page_ == 0 || page_ == 4) {
         for (int i = ControllerStyleFirst; i <= ControllerStyleLast; ++i) InvalidateControl(hwnd_, i);
         for (int id : {OverlayPreview, PreviewIdle, PreviewPressed, PreviewBackground}) InvalidateControl(hwnd_, id);
@@ -496,7 +527,6 @@ void SettingsWindow::UpdateControls() {
     }
     if (page_ == 0) {
         for (int i = StyleFirst; i <= StyleLast; ++i) InvalidateControl(hwnd_, i);
-        SendDlgItemMessageW(hwnd_, AppearanceDevice, CB_SETCURSEL, ui.appearanceController ? 1 : 0, 0);
         SendDlgItemMessageW(hwnd_, PreviewLayout, CB_SETCURSEL,
             ui.appearanceController ? static_cast<int>(ui.previewControllerLayout) : ui.previewIso ? 1 : 0, 0);
         if (OriginalAppearance(settings, ui.appearanceController)) {
@@ -564,7 +594,7 @@ void SettingsWindow::UpdateControls() {
         if (oldSelection < 0 || static_cast<size_t>(oldSelection) >= settings.applications.size()) oldSelection = 0;
         SendMessageW(allowed, LB_SETCURSEL, oldSelection, 0); EnableWindow(GetDlgItem(hwnd_, RemoveApp), !settings.applications.empty());
     } else if (page_ == 3) {
-        SetText(hwnd_, HotkeyValue, HotkeyName(settings.hotkeyModifiers, settings.hotkeyVk));
+        SetText(hwnd_, HotkeyValue, captureSlot_ == -2 ? L"Press a key…" : HotkeyName(settings.hotkeyModifiers, settings.hotkeyVk));
         if (captureSlot_ != -2) {
             Check(hwnd_, ModCtrl, (settings.hotkeyModifiers & MOD_CONTROL) != 0); Check(hwnd_, ModAlt, (settings.hotkeyModifiers & MOD_ALT) != 0);
             Check(hwnd_, ModShift, (settings.hotkeyModifiers & MOD_SHIFT) != 0); Check(hwnd_, ModWin, (settings.hotkeyModifiers & MOD_WIN) != 0);
@@ -572,8 +602,6 @@ void SettingsWindow::UpdateControls() {
         SetText(hwnd_, RecordHotkey, captureSlot_ == -2 ? L"Cancel recording" : L"Record shortcut"); Check(hwnd_, Startup, StartupEnabled());
         Check(hwnd_, StartMinimized, settings.startMinimized);
     } else if (page_ == 4) {
-        SetText(hwnd_, ControllerAppearance, settings.controllerStyle == ControllerStyle::Original ? L"Opacity" : L"Colors");
-        Check(hwnd_, ControllerMode, settings.device == OverlayDevice::Controller);
         SendDlgItemMessageW(hwnd_, ControllerScale, TBM_SETPOS, TRUE, settings.controllerScale);
         SetText(hwnd_, ControllerScaleValue, std::to_wstring(settings.controllerScale) + L"%");
         SetText(hwnd_, MoveOverlay, app_->overlay.Editing() ? L"Done moving" : L"Move overlay");
@@ -582,6 +610,10 @@ void SettingsWindow::UpdateControls() {
         SendDlgItemMessageW(hwnd_, ControllerIndex, CB_SETCURSEL, settings.controllerIndex + 1, 0);
         SendDlgItemMessageW(hwnd_, ControllerDeadzone, TBM_SETPOS, TRUE, settings.controllerDeadzone);
         SetText(hwnd_, ControllerDeadzoneValue, std::to_wstring(settings.controllerDeadzone) + L"%");
+        SendDlgItemMessageW(hwnd_, Opacity, TBM_SETPOS, TRUE, settings.opacity);
+        SetText(hwnd_, OpacityValue, std::to_wstring(settings.opacity) + L"%");
+        SendDlgItemMessageW(hwnd_, OriginalOpacityControl, TBM_SETPOS, TRUE, settings.originalOpacity);
+        SetText(hwnd_, OriginalOpacityValue, std::to_wstring(settings.originalOpacity) + L"%");
     } else if (page_ == 5) {
         const auto& result = app_->updateResult;
         const char* build = CurrentBuildCommit();
@@ -609,8 +641,23 @@ void SettingsWindow::UpdateControls() {
         SetText(hwnd_, MoveOverlay, app_->overlay.Editing() ? L"Done moving" : L"Move overlay");
     }
     SetText(hwnd_, Status, ui.status); ui.updating = false;
+    RefreshControllerInput();
 }
 void SettingsWindow::Refresh() { UpdateControls(); }
+bool SettingsWindow::WantsControllerInput() const {
+    return hwnd_ && app_ && IsWindowVisible(hwnd_) && !IsIconic(hwnd_) && OverlayPage(page_) &&
+        ui.appearanceController && app_->settings.device == OverlayDevice::Controller && GetForegroundWindow() == hwnd_;
+}
+void SettingsWindow::RefreshControllerInput() {
+    if (!hwnd_ || !app_ || !OverlayPage(page_) || !ui.appearanceController) return;
+    const auto& state = app_->controllerState;
+    if (ui.previewControllerStateValid && ui.previewControllerState == state) return;
+    const bool connectionChanged = !ui.previewControllerStateValid || ui.previewControllerState.connected != state.connected;
+    ui.previewControllerState = state;
+    ui.previewControllerStateValid = true;
+    if (connectionChanged) SetText(hwnd_, ControllerConnection, state.connected ? L"Connected" : L"Waiting for controller");
+    if (IsWindowVisible(hwnd_) && !IsIconic(hwnd_) && (page_ == 4 || !ui.previewPressed)) InvalidateControl(hwnd_, OverlayPreview);
+}
 bool SettingsWindow::Capturing() const { return hwnd_ && IsWindowVisible(hwnd_) && captureSlot_ != -1; }
 void SettingsWindow::CancelCapture() {
     if (captureSlot_ == -1) return;
@@ -626,11 +673,14 @@ void SettingsWindow::CaptureInput(int input) {
         if (input >= 256 || input == VK_SHIFT || input == VK_CONTROL || input == VK_MENU ||
             input == VK_LSHIFT || input == VK_RSHIFT || input == VK_LCONTROL || input == VK_RCONTROL ||
             input == VK_LMENU || input == VK_RMENU || input == VK_LWIN || input == VK_RWIN) return;
+        captureSlot_ = -1;
         if (!app_->SetHotkey(SelectedModifiers(hwnd_), static_cast<UINT>(input))) {
+            captureSlot_ = -2;
             ui.status = L"That shortcut is unavailable. Choose another key or modifier combination.";
             SetText(hwnd_, Status, ui.status); return;
         }
-        captureSlot_ = -1; ui.status = L"Shortcut saved.";
+        ui.status = L"Shortcut saved.";
+        app_->UpdateVisibility(); UpdateControls(); return;
     } else {
         BindInput(app_->settings, static_cast<size_t>(captureSlot_), input);
         captureSlot_ = -1; ui.status = L"Input assigned. This input now lights up only the selected element.";
@@ -673,18 +723,27 @@ void SettingsWindow::Command(int id, int code) {
     switch (id) {
     case OpenLayout: SelectPage(ui.appearanceController ? 4 : 6); return;
     case OpenKeyboardLayout: SelectPage(6); return;
+    case OpenAppearance: SelectPage(0); return;
+    case OpenShortcut: SelectPage(3); return;
     case AppearanceDevice: {
         if (code != CBN_SELCHANGE) return;
         const LRESULT selected = SendDlgItemMessageW(hwnd_, AppearanceDevice, CB_GETCURSEL, 0, 0);
         if (selected < 0 || selected > 1) return;
+        const OverlayDevice device = selected == 1 ? OverlayDevice::Controller : OverlayDevice::KeyboardMouse;
+        const bool changed = settings.device != device;
+        CancelCapture();
+        if (app_->overlay.Editing()) app_->EditPosition(false);
         ui.appearanceController = selected == 1;
-        ui.status.clear(); Build(); SetFocus(GetDlgItem(hwnd_, AppearanceDevice)); return;
-    }
-    case ControllerAppearance:
-        if (code != BN_CLICKED) return;
-        ui.appearanceController = true;
+        settings.device = device;
+        ui.previewPressed = false;
         ui.previewControllerLayout = settings.controllerLayout;
-        SelectPage(0); return;
+        if (page_ == 4 || page_ == 6) page_ = ui.appearanceController ? 4 : 6;
+        ui.status.clear(); Build();
+        SetFocus(GetDlgItem(hwnd_, AppearanceDevice));
+        if (changed) app_->Changed();
+        else app_->UpdateVisibility();
+        return;
+    }
     case ResetControllerStyle:
         if (code != BN_CLICKED) return;
         settings.controllerStyle = DefaultSettings().controllerStyle;
@@ -785,7 +844,10 @@ void SettingsWindow::Command(int id, int code) {
         UpdateControls(); break;
     case ResetPosition:
         settings.x = settings.y = 32; settings.anchorRight = false; settings.anchorBottom = true;
-        settings.monitor.clear(); settings.scale = 100; ui.status = L"Keyboard size reset to 100%; position reset to the bottom-left corner.";
+        settings.monitor.clear();
+        if (settings.device == OverlayDevice::Controller) settings.controllerScale = 100;
+        else settings.scale = 100;
+        ui.status = L"Size reset to 100%; position reset to the bottom-left corner.";
         app_->Changed(); break;
     case ResetControllerSize:
         if (code != BN_CLICKED) return;
@@ -852,15 +914,21 @@ void SettingsWindow::Command(int id, int code) {
         break;
     }
     case ModCtrl: case ModAlt: case ModShift: case ModWin:
-        if (captureSlot_ != -2) {
+        if (code == BN_CLICKED && captureSlot_ != -2) {
             if (!app_->SetHotkey(SelectedModifiers(hwnd_), settings.hotkeyVk)) ui.status = L"That shortcut is unavailable. The previous shortcut is still active.";
             else ui.status = L"Shortcut saved.";
-            app_->Changed(); UpdateControls();
+            UpdateControls();
         }
         break;
     case RecordHotkey:
+        if (code != BN_CLICKED) return;
         if (captureSlot_ != -1) CancelCapture();
-        else { captureSlot_ = -2; ui.status = L"Press a keyboard key. The selected modifier checkboxes are used for the shortcut."; app_->Changed(); }
+        else { captureSlot_ = -2; ui.status.clear(); app_->UpdateVisibility(); }
+        UpdateControls(); break;
+    case ResetHotkey:
+        if (code != BN_CLICKED) return;
+        CancelCapture();
+        ui.status = app_->SetHotkey(0, VK_F8) ? L"Shortcut reset to F8." : L"F8 is unavailable. Choose another shortcut.";
         UpdateControls(); break;
     case Startup:
         if (!SetStartup(Checked(hwnd_, Startup))) {
@@ -873,15 +941,6 @@ void SettingsWindow::Command(int id, int code) {
         settings.startMinimized = Checked(hwnd_, StartMinimized);
         ui.status = settings.startMinimized ? L"Next launch will open in the system tray." : L"Next launch will open Settings.";
         app_->Changed(); break;
-    case ControllerMode: {
-        if (code != BN_CLICKED) return;
-        const OverlayDevice device = Checked(hwnd_, ControllerMode) ? OverlayDevice::Controller : OverlayDevice::KeyboardMouse;
-        if (app_->overlay.Editing()) app_->EditPosition(false);
-        settings.device = device;
-        ui.appearanceController = settings.device == OverlayDevice::Controller;
-        ui.status = settings.device == OverlayDevice::Controller ? L"Controller view enabled." : L"Keyboard and mouse view enabled.";
-        app_->Changed(); break;
-    }
     case ControllerLayoutChoice: {
         if (code != CBN_SELCHANGE) return;
         const LRESULT selected = SendDlgItemMessageW(hwnd_, ControllerLayoutChoice, CB_GETCURSEL, 0, 0);
@@ -931,16 +990,19 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wParam,
     case WM_COMMAND:
         if (LOWORD(wParam) == IDCANCEL) {
             self->CancelCapture(); self->app_->EditPosition(false); ShowWindow(hwnd, SW_HIDE);
+            self->app_->UpdateVisibility();
         } else self->Command(LOWORD(wParam), HIWORD(wParam));
         return 0;
     case WM_CLOSE:
-        self->CancelCapture(); self->app_->EditPosition(false); ShowWindow(hwnd, SW_HIDE); return 0;
+        self->CancelCapture(); self->app_->EditPosition(false); ShowWindow(hwnd, SW_HIDE); self->app_->UpdateVisibility(); return 0;
     case WM_ACTIVATE:
         if (LOWORD(wParam) == WA_INACTIVE && self->app_ && self->app_->overlay.Editing() &&
             reinterpret_cast<HWND>(lParam) != self->app_->overlay.Handle()) self->app_->EditPosition(false);
+        if (self->app_) self->app_->UpdateVisibility();
         break;
     case WM_SIZE:
         if (wParam == SIZE_MINIMIZED && self->app_ && self->app_->overlay.Editing()) self->app_->EditPosition(false);
+        if (self->app_) self->app_->UpdateVisibility();
         break;
     case WM_DESTROY:
         self->captureSlot_ = -1; self->controls_.clear(); FreeFonts();
@@ -1018,7 +1080,10 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wParam,
             if (controller && self->page_ != 4) preview.controllerLayout = ui.previewControllerLayout;
             if (HWND fill = GetDlgItem(hwnd, GradientFillControl)) preview.gradientFillOpacity = static_cast<int>(SendMessageW(fill, TBM_GETPOS, 0, 0));
             if (HWND opacity = GetDlgItem(hwnd, OriginalOpacityControl)) preview.originalOpacity = static_cast<int>(SendMessageW(opacity, TBM_GETPOS, 0, 0));
-            DrawOverlayPreview(item->hDC, item->rcItem, preview, ui.previewPressed, ui.previewLight);
+            if (HWND opacity = GetDlgItem(hwnd, Opacity)) preview.opacity = static_cast<int>(SendMessageW(opacity, TBM_GETPOS, 0, 0));
+            const bool pressed = self->page_ == 0 && ui.previewPressed;
+            DrawOverlayPreview(item->hDC, item->rcItem, preview, pressed, ui.previewLight,
+                controller && !pressed ? &self->app_->controllerState : nullptr);
             return TRUE;
         }
         if (item->CtlType == ODT_STATIC && item->CtlID == GradientStrip) {
@@ -1035,7 +1100,10 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wParam,
         const bool themeCard = item->CtlID >= ThemeFirst && item->CtlID <= ThemeLast;
         const bool colorButton = item->CtlID >= BackgroundStart && item->CtlID <= PressedColor;
         const ColorTheme activeTheme = self->app_->settings.colorTheme == ColorTheme::Original ? ColorTheme::Sunset : self->app_->settings.colorTheme;
-        const bool selected = (nav && static_cast<int>(item->CtlID - NavOverlay) == self->page_) ||
+        const bool selected = (nav && (static_cast<int>(item->CtlID - NavOverlay) == self->page_ ||
+                (item->CtlID == NavOverlay && OverlayPage(self->page_)))) ||
+            (item->CtlID == OpenLayout && (self->page_ == 4 || self->page_ == 6)) ||
+            (item->CtlID == OpenAppearance && self->page_ == 0) ||
             (styleCard && static_cast<int>(item->CtlID - StyleFirst) == static_cast<int>(self->app_->settings.style)) ||
             (controllerStyleCard && static_cast<int>(item->CtlID - ControllerStyleFirst) == static_cast<int>(self->app_->settings.controllerStyle)) ||
             (keyboardFormCard && static_cast<int>(item->CtlID - KeyboardFormFirst) == static_cast<int>(self->app_->settings.keyboardForm)) ||
@@ -1100,7 +1168,8 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wParam,
         wchar_t label[128]{}; GetWindowTextW(item->hwndItem, label, 128);
         if (colorButton && item->CtlID != PressedColor) label[0] = L'\0';
         if (item->CtlID == SwapGradient) wcscpy_s(label, L"\u21C4");
-        DrawTextAt(item->hDC, label, labelRect, ui.normal, textColor, align | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+        DrawTextAt(item->hDC, label, labelRect, item->CtlID == OpenShortcut ? ui.smallFont : ui.normal,
+            textColor, align | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
         if ((item->itemState & ODS_FOCUS) && !(item->itemState & ODS_NOFOCUSRECT)) {
             RECT focus = item->rcItem; InflateRect(&focus, -Px(4), -Px(4)); DrawFocusRect(item->hDC, &focus);
         }
@@ -1115,8 +1184,9 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wParam,
         RECT name{Px(51), Px(23), Px(177), Px(69)}; DrawTextAt(dc, L"Input\nOverlay", name, ui.heading, Foreground, DT_LEFT);
         RECT section{Px(30), Px(95), Px(166), Px(116)}; DrawTextAt(dc, L"PREFERENCES", section, ui.smallFont, Muted, DT_LEFT | DT_SINGLELINE);
         RECT foot{Px(25), Px(630), Px(169), Px(654)}; DrawTextAt(dc, L"Portable  /  Windows", foot, ui.smallFont, Muted, DT_LEFT | DT_SINGLELINE);
-        RECT title{Px(216), Px(25), Px(794), Px(66)}; DrawTextAt(dc, PageTitles[self->page_], title, ui.title, Foreground, DT_LEFT | DT_SINGLELINE);
-        RECT subtitle{Px(216), Px(72), Px(797), Px(105)}; DrawTextAt(dc, PageSubtitles[self->page_], subtitle, ui.normal, Muted, DT_LEFT | DT_WORDBREAK);
+        const int headingPage = OverlayPage(self->page_) ? 0 : self->page_;
+        RECT title{Px(216), Px(25), Px(794), Px(66)}; DrawTextAt(dc, PageTitles[headingPage], title, ui.title, Foreground, DT_LEFT | DT_SINGLELINE);
+        RECT subtitle{Px(216), Px(72), Px(797), Px(105)}; DrawTextAt(dc, PageSubtitles[headingPage], subtitle, ui.normal, Muted, DT_LEFT | DT_WORDBREAK);
         EndPaint(hwnd, &paint); return 0;
     }
     default: break;

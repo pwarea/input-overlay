@@ -139,7 +139,7 @@ bool ReadText(const std::wstring& file, std::wstring& result) {
 }
 
 bool IsHotkey(UINT vk) {
-    return vk > VK_XBUTTON2 && vk <= 0xfe && vk != VK_SHIFT && vk != VK_CONTROL && vk != VK_MENU &&
+    return vk >= VK_BACK && vk <= 0xfe && vk != VK_SHIFT && vk != VK_CONTROL && vk != VK_MENU &&
         vk != VK_LSHIFT && vk != VK_RSHIFT && vk != VK_LCONTROL && vk != VK_RCONTROL &&
         vk != VK_LMENU && vk != VK_RMENU && vk != VK_LWIN && vk != VK_RWIN;
 }
@@ -188,8 +188,8 @@ void NormalizeSettings(Settings& settings) {
         std::any_of(settings.monitor.begin(), settings.monitor.end(), [](wchar_t c) { return c < 32; })) settings.monitor.clear();
     settings.hotkeyModifiers &= MOD_ALT | MOD_CONTROL | MOD_SHIFT | MOD_WIN;
     if (!IsHotkey(settings.hotkeyVk)) {
-        settings.hotkeyVk = VK_F10;
-        settings.hotkeyModifiers = MOD_CONTROL | MOD_ALT;
+        settings.hotkeyVk = VK_F8;
+        settings.hotkeyModifiers = 0;
     }
     const auto defaults = DefaultSettings();
     for (size_t i = 0; i < SlotCount; ++i) {

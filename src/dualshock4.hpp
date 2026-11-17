@@ -4,7 +4,12 @@
 #include <memory>
 
 namespace input_overlay {
+enum class PlayStationProtocol { Unsupported, DualShock4, DualSense };
+PlayStationProtocol IdentifyPlayStationController(std::uint16_t vendor, std::uint16_t product);
 bool ParseDualShock4Report(const std::uint8_t* bytes, std::size_t size, ControllerRawState& result);
+bool ParseDualSenseReport(const std::uint8_t* bytes, std::size_t size, ControllerRawState& result);
+bool ParsePlayStationReport(PlayStationProtocol protocol, const std::uint8_t* bytes,
+    std::size_t size, ControllerRawState& result);
 
 class DualShock4Provider {
 public:

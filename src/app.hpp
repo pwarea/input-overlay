@@ -18,7 +18,7 @@
 #include "updates.hpp"
 
 #ifndef INPUT_OVERLAY_VERSION
-#define INPUT_OVERLAY_VERSION "0.5.0"
+#define INPUT_OVERLAY_VERSION "0.5.1"
 #endif
 #define INPUT_OVERLAY_WIDEN_IMPL(value) L##value
 #define INPUT_OVERLAY_WIDEN(value) INPUT_OVERLAY_WIDEN_IMPL(value)
@@ -78,7 +78,7 @@ struct Settings {
     bool autoCheckUpdates = true;
     bool anchorRight = false, anchorBottom = true, isoLayout = false;
     std::wstring monitor;
-    UINT hotkeyModifiers = MOD_CONTROL | MOD_ALT, hotkeyVk = VK_F10;
+    UINT hotkeyModifiers = 0, hotkeyVk = VK_F8;
     std::vector<std::wstring> applications;
 };
 inline int EffectiveOverlayScale(const Settings& settings) {
@@ -91,7 +91,8 @@ inline int EffectiveOverlayOpacity(const Settings& settings) {
 struct WindowInfo { HWND hwnd = nullptr; std::wstring title, path; };
 
 Settings DefaultSettings();
-void DrawOverlayPreview(HDC dc, const RECT& bounds, const Settings& settings, bool pressed, bool lightBackground);
+void DrawOverlayPreview(HDC dc, const RECT& bounds, const Settings& settings, bool pressed, bool lightBackground,
+    const ControllerState* liveController = nullptr);
 void NormalizeSettings(Settings& settings);
 bool LoadSettings(const std::wstring& file, Settings& settings);
 bool SaveSettings(const std::wstring& file, const Settings& settings);
@@ -139,6 +140,8 @@ public:
     void CaptureInput(int input);
     void CancelCapture();
     bool Capturing() const;
+    bool WantsControllerInput() const;
+    void RefreshControllerInput();
     HWND Handle() const { return hwnd_; }
 private:
     static LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
@@ -188,6 +191,7 @@ private:
     void UpdateTray();
     void TrayMenu();
     void SyncInputRegistration();
+    bool WantsControllerPolling() const;
     void SyncControllerPolling();
     void PollController();
     void RequestRender();
@@ -196,6 +200,7 @@ private:
     HINSTANCE instance_ = nullptr;
     HWINEVENTHOOK foregroundHook_ = nullptr;
     UINT taskbarCreated_ = 0;
+    int hotkeyId_ = 0;
     bool visible_ = false, trayAdded_ = false, dirty_ = false;
     bool inputActive_ = false, shuttingDown_ = false;
     unsigned inputGeneration_ = 0;

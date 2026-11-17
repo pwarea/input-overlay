@@ -1,4 +1,5 @@
 #include "controller.hpp"
+#include "dualshock4.hpp"
 #include <array>
 #include <cmath>
 #include <cstdio>
@@ -190,6 +191,50 @@ void TestInjectedReadersNeverUseHardware() {
     combined.Poll(1999, -1, 15);
     Check(native.calls == std::array<int, 4>{1, 1, 1, 1}, "Native absence must not create a busy polling loop");
 }
+
+void TestDualSenseSelectionAndReconnect() {
+    struct Reports {
+        bool connected = true;
+        std::array<std::uint8_t, 64> bytes{};
+        static bool Read(void* context, int index, input_overlay::ControllerRawState& raw) {
+            const auto& self = *static_cast<Reports*>(context);
+            return index == 0 && self.connected && input_overlay::ParsePlayStationReport(
+                input_overlay::IdentifyPlayStationController(0x054c, 0x0ce6), self.bytes.data(), self.bytes.size(), raw);
+        }
+    } native;
+    native.bytes[0] = 1;
+    native.bytes[1] = native.bytes[2] = native.bytes[3] = native.bytes[4] = 128;
+    native.bytes[5] = 255;
+    native.bytes[8] = 0x28;
+    FakeControllers xinput;
+    xinput.connected[0] = true;
+    input_overlay::ControllerProvider provider(FakeControllers::Read, &xinput, Reports::Read, &native);
+    Check(provider.Poll(0, -1, 15).index == 0,
+        "Auto mode must preserve its documented first-XInput preference when a virtual controller is present");
+    auto state = provider.Poll(1, input_overlay::XInputSlotCount, 15);
+    Check(state.connected && state.index == 4 && state.buttons == 0x1000 && state.leftTrigger == 1,
+        "An explicit PlayStation slot must bypass an idle XInput device and publish actual DualSense controls");
+    native.bytes[5] = 0;
+    native.bytes[8] = 8;
+    state = provider.Poll(17, 4, 15);
+    Check(state.connected && state.buttons == 0 && state.leftTrigger == 0,
+        "A DualSense release packet must immediately clear the preceding held button and trigger");
+    native.connected = false;
+    Check(provider.Poll(33, 4, 15) == input_overlay::ControllerState{},
+        "A native disconnect must not leave a controller falsely connected with its last controls");
+    native.connected = true;
+    native.bytes[8] = 0x48;
+    Check(provider.Poll(2032, 4, 15) == input_overlay::ControllerState{},
+        "Rapid native reconnect must respect the bounded absent-device retry");
+    state = provider.Poll(2033, 4, 15);
+    Check(state.connected && state.buttons == 0x2000 && state.leftTrigger == 0,
+        "Native reconnect must replace the old packet with current DualSense input at the next retry");
+    native.bytes[8] = 8;
+    provider.Reset();
+    state = provider.Poll(2034, 4, 15);
+    Check(state.connected && state.buttons == 0,
+        "Resuming controller polling must read the current native packet without retaining a stale held button");
+}
 }
 
 int main() {
@@ -199,6 +244,7 @@ int main() {
         TestExplicitSelectionAndReset();
         TestCombinedSources();
         TestInjectedReadersNeverUseHardware();
+        TestDualSenseSelectionAndReconnect();
         std::puts("All controller tests passed.");
         return EXIT_SUCCESS;
     } catch (const std::exception& error) {

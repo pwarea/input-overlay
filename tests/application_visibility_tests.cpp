@@ -11,6 +11,7 @@
 #undef private
 #include <commctrl.h>
 #include <cstdio>
+#include <new>
 #include <stdexcept>
 #include <string>
 
@@ -404,10 +405,9 @@ void TestControllerAppearance(Harness& harness, HWND allowedWindow) {
         if (manuallyHidden) app.Toggle();
         for (int design = 0; design < ControllerStyleCount; ++design) for (int layout = 0; layout < ControllerLayoutCount; ++layout) {
             click(NavController);
-            Check(GetDlgItem(window, OverlayPreview) && GetDlgItem(window, ControllerAppearance) &&
-                GetDlgItem(window, ResetControllerStyle), "Controller page must expose the native preview, Colors and Reset style");
-            for (int id = ControllerStyleFirst; id <= ControllerStyleLast; ++id)
-                Check(GetDlgItem(window, id) != nullptr, "Controller page must expose every design");
+            Check(GetDlgItem(window, OverlayPreview) && GetDlgItem(window, OpenAppearance) && GetDlgItem(window, ControllerConnection) &&
+                !GetDlgItem(window, NavController) && !GetDlgItem(window, NavLayout),
+                "Controller controls must share the Overlay page without separate sidebar entries");
             Check(SendDlgItemMessageW(window, ControllerLayoutChoice, CB_GETCOUNT, 0, 0) == ControllerLayoutCount,
                 "Controller page must expose Xbox, DualSense and DualShock 4 layouts");
             const wchar_t* layoutNames[] = {L"Xbox", L"DualSense", L"DualShock 4"};
@@ -416,15 +416,18 @@ void TestControllerAppearance(Harness& harness, HWND allowedWindow) {
                 static_cast<LRESULT>(std::wstring(layoutNames[layout]).size()) &&
                 SendDlgItemMessageW(window, ControllerLayoutChoice, CB_GETLBTEXT, layout, reinterpret_cast<LPARAM>(layoutLabel)) != CB_ERR &&
                 std::wstring(layoutLabel) == layoutNames[layout], "Each controller layout must have its correct label");
-            click(ControllerStyleFirst + design);
             select(ControllerLayoutChoice, layout);
+            click(OpenAppearance);
+            for (int id = ControllerStyleFirst; id <= ControllerStyleLast; ++id)
+                Check(GetDlgItem(window, id) != nullptr, "Controller appearance must expose every design");
+            click(ControllerStyleFirst + design);
             Check(static_cast<int>(app.settings.controllerStyle) == design && static_cast<int>(app.settings.controllerLayout) == layout &&
-                app.settings.style == OverlayStyle::Pearl && app.settings.device == OverlayDevice::KeyboardMouse,
-                "Each controller design and layout must remain independent of keyboard style and active device");
+                app.settings.style == OverlayStyle::Pearl && app.settings.device == OverlayDevice::Controller,
+                "Each controller design and layout must remain independent of keyboard style");
             Settings saved;
             Check(LoadSettings(app.configPath, saved) && saved.controllerStyle == app.settings.controllerStyle &&
                 saved.controllerLayout == app.settings.controllerLayout && saved.style == OverlayStyle::Pearl &&
-                saved.device == OverlayDevice::KeyboardMouse && saved.enabled == !manuallyHidden &&
+                saved.device == OverlayDevice::Controller && saved.enabled == !manuallyHidden &&
                 saved.onlySelectedApps && saved.applications == original.applications,
                 "Controller design and layout changes must persist without enabling a hidden overlay or erasing its filter");
             harness.Expect(false, false, "Controller appearance changes must preserve application filtering and manual hide");
@@ -434,11 +437,11 @@ void TestControllerAppearance(Harness& harness, HWND allowedWindow) {
             click(PreviewIdle);
             Check(ReadConfiguration(app.configPath) == beforeColors,
                 "Controller page preview controls must not save live settings");
-            click(ControllerAppearance);
+            click(OpenAppearance);
             Check(SendDlgItemMessageW(window, AppearanceDevice, CB_GETCURSEL, 0, 0) == 1 &&
                 GetDlgItem(window, ControllerStyleFirst) && !GetDlgItem(window, StyleFirst) &&
-                app.settings.device == OverlayDevice::KeyboardMouse && ReadConfiguration(app.configPath) == beforeColors,
-                "Colors must open the controller appearance editor without activating controller mode or saving preferences");
+                app.settings.device == OverlayDevice::Controller && ReadConfiguration(app.configPath) == beforeColors,
+                "The Appearance tab must preserve the selected device and saved preferences");
             Check(SendDlgItemMessageW(window, PreviewLayout, CB_GETCOUNT, 0, 0) == ControllerLayoutCount &&
                 SendDlgItemMessageW(window, PreviewLayout, CB_GETCURSEL, 0, 0) == layout,
                 "The appearance preview must restore every controller layout including DualShock 4");
@@ -447,14 +450,14 @@ void TestControllerAppearance(Harness& harness, HWND allowedWindow) {
             click(PreviewBackground);
             click(PreviewIdle);
             select(AppearanceDevice, 0);
-            Check(GetDlgItem(window, StyleFirst) && !GetDlgItem(window, ControllerStyleFirst),
-                "Keyboard appearance context must restore keyboard style controls");
+            Check(GetDlgItem(window, StyleFirst) && !GetDlgItem(window, ControllerStyleFirst) && app.settings.device == OverlayDevice::KeyboardMouse,
+                "The unified device selector must activate keyboard mode and show its controls");
             select(PreviewLayout, original.isoLayout ? 0 : 1);
             select(AppearanceDevice, 1);
             Check(app.settings.controllerLayout == saved.controllerLayout && app.settings.isoLayout == original.isoLayout &&
                 app.settings.controllerStyle == saved.controllerStyle && app.settings.style == OverlayStyle::Pearl &&
-                app.settings.device == OverlayDevice::KeyboardMouse && ReadConfiguration(app.configPath) == beforeColors,
-                "Appearance context, preview layouts and preview states must remain transient and must not switch the live device");
+                app.settings.device == OverlayDevice::Controller && ReadConfiguration(app.configPath) == beforeColors,
+                "Switching devices back must retain styles while preview layouts and states remain transient");
             Check(std::none_of(app.pressed.begin(), app.pressed.end(), [](bool down) { return down; }),
                 "Controller appearance previews must not create live keyboard or mouse input");
             if (app.settings.controllerStyle == ControllerStyle::Prism) {
@@ -468,7 +471,7 @@ void TestControllerAppearance(Harness& harness, HWND allowedWindow) {
                 SendMessageW(window, WM_HSCROLL, TB_ENDTRACK, reinterpret_cast<LPARAM>(fill));
                 Check(app.settings.colorTheme == ColorTheme::Custom && app.settings.backgroundStart == RGB(34, 85, 136) &&
                     app.settings.backgroundEnd == RGB(238, 170, 102) && app.settings.gradientFillOpacity == 31 &&
-                    app.settings.style == OverlayStyle::Pearl && app.settings.device == OverlayDevice::KeyboardMouse,
+                    app.settings.style == OverlayStyle::Pearl && app.settings.device == OverlayDevice::Controller,
                     "Prism HEX and fill edits must apply while retaining keyboard style and live device");
             } else if (app.settings.controllerStyle == ControllerStyle::Original) {
                 Check(GetDlgItem(window, OriginalOpacityControl) && GetDlgItem(window, OriginalSolid) &&
@@ -484,7 +487,7 @@ void TestControllerAppearance(Harness& harness, HWND allowedWindow) {
         const Settings beforeReset = app.settings;
         click(ResetControllerStyle);
         Check(app.settings.controllerStyle == ControllerStyle::Frost && app.settings.style == OverlayStyle::Pearl &&
-            app.settings.device == OverlayDevice::KeyboardMouse && app.settings.controllerLayout == beforeReset.controllerLayout &&
+            app.settings.device == OverlayDevice::Controller && app.settings.controllerLayout == beforeReset.controllerLayout &&
             app.settings.colorTheme == beforeReset.colorTheme && app.settings.backgroundStart == beforeReset.backgroundStart &&
             app.settings.backgroundEnd == beforeReset.backgroundEnd && app.settings.gradientFillOpacity == beforeReset.gradientFillOpacity &&
             app.settings.opacity == beforeReset.opacity && app.settings.originalOpacity == beforeReset.originalOpacity,
@@ -531,9 +534,10 @@ void TestOriginalOpacity(Harness& harness) {
     app.Changed();
     Focus(window);
     click(NavController);
+    click(OpenAppearance);
     click(ControllerStyleFirst + static_cast<int>(ControllerStyle::Original));
-    Check(Text(window, ControllerAppearance) == L"Opacity" && app.settings.originalOpacity == 91 && app.settings.opacity == 73 &&
-        app.settings.device == OverlayDevice::KeyboardMouse, "Selecting Original must preserve both opacity preferences and the active device");
+    Check(GetDlgItem(window, OriginalOpacityControl) && app.settings.originalOpacity == 91 && app.settings.opacity == 73 &&
+        app.settings.device == OverlayDevice::Controller, "Selecting Original must preserve both opacity preferences and the active device");
     RECT previous{};
     for (int id = ControllerStyleFirst; id <= ControllerStyleLast; ++id) {
         RECT bounds{};
@@ -542,9 +546,8 @@ void TestOriginalOpacity(Harness& harness) {
         previous = bounds;
     }
     RECT appearance{};
-    GetWindowRect(GetDlgItem(window, ControllerAppearance), &appearance);
-    Check(previous.right < appearance.left, "The fourth controller style must not overlap the opacity button");
-    click(ControllerAppearance);
+    GetWindowRect(GetDlgItem(window, ResetControllerStyle), &appearance);
+    Check(previous.right < appearance.left, "The fourth controller style must not overlap the reset button");
     Check(GetDlgItem(window, OriginalOpacityControl) && !GetDlgItem(window, PressedColor) &&
         SendDlgItemMessageW(window, OriginalOpacityControl, TBM_GETRANGEMIN, 0, 0) == 15 &&
         SendDlgItemMessageW(window, OriginalOpacityControl, TBM_GETRANGEMAX, 0, 0) == 100 &&
@@ -575,7 +578,7 @@ void TestOriginalOpacity(Harness& harness) {
         Settings saved;
         Check(LoadSettings(app.configPath, saved) && saved.controllerStyle == ControllerStyle::Original &&
             saved.originalOpacity == value && saved.opacity == 73 && !saved.enabled && saved.onlySelectedApps &&
-            saved.applications == original.applications && saved.device == OverlayDevice::KeyboardMouse,
+            saved.applications == original.applications && saved.device == OverlayDevice::Controller,
             "Original opacity must persist without changing global opacity, device, visibility or filters");
         harness.Expect(false, false, "Original opacity changes must preserve filtering and manual hide");
     }
@@ -594,8 +597,9 @@ void TestOriginalOpacity(Harness& harness) {
     Check(app.settings.opacity == 62 && app.settings.originalOpacity == 55,
         "The Layout opacity slider must retain its existing scope while Original is selected");
     click(NavController);
+    click(OpenAppearance);
     click(ControllerStyleFirst + static_cast<int>(ControllerStyle::Prism));
-    Check(Text(window, ControllerAppearance) == L"Colors" && app.settings.originalOpacity == 55 && app.settings.opacity == 62,
+    Check(GetDlgItem(window, StartHex) && app.settings.originalOpacity == 55 && app.settings.opacity == 62,
         "Other controller styles must restore Colors and preserve both opacity values");
     app.settings = original;
     app.Changed();
@@ -620,14 +624,14 @@ void TestControllerInputSelection(Harness& harness) {
     Focus(window);
     click(NavController);
     Check(SendDlgItemMessageW(window, ControllerIndex, CB_GETCOUNT, 0, 0) == ControllerSlotCount + 1,
-        "Controller selection must expose Auto, four XInput slots and four native DualShock 4 slots");
+        "Controller selection must expose Auto, four XInput slots and four native PlayStation slots");
     for (int index = -1; index < ControllerSlotCount; ++index) {
         const std::wstring expected = index < 0 ? L"Auto" : index < XInputSlotCount ? L"XInput " + std::to_wstring(index + 1) :
-            L"DualShock 4 " + std::to_wstring(index - XInputSlotCount + 1);
+            L"PlayStation " + std::to_wstring(index - XInputSlotCount + 1);
         wchar_t label[64]{};
         Check(SendDlgItemMessageW(window, ControllerIndex, CB_GETLBTEXTLEN, index + 1, 0) == static_cast<LRESULT>(expected.size()) &&
             SendDlgItemMessageW(window, ControllerIndex, CB_GETLBTEXT, index + 1, reinterpret_cast<LPARAM>(label)) != CB_ERR &&
-            label == expected, "Controller labels must distinguish XInput and native DualShock 4 slots");
+            label == expected, "Controller labels must distinguish XInput and native PlayStation slots");
         Check(SendDlgItemMessageW(window, ControllerIndex, CB_SETCURSEL, index + 1, 0) != CB_ERR,
             "Every controller input slot must be selectable");
         SendMessageW(window, WM_COMMAND, MAKEWPARAM(ControllerIndex, CBN_SELCHANGE), 0);
@@ -676,8 +680,8 @@ void TestIndependentSizes(Harness& harness, HWND allowedWindow) {
         SendMessageW(window, WM_HSCROLL, notification, reinterpret_cast<LPARAM>(control));
     };
     const auto controllerMode = [&](bool enabled) {
-        SendDlgItemMessageW(window, ControllerMode, BM_SETCHECK, enabled ? BST_CHECKED : BST_UNCHECKED, 0);
-        click(ControllerMode);
+        SendDlgItemMessageW(window, AppearanceDevice, CB_SETCURSEL, enabled ? 1 : 0, 0);
+        SendMessageW(window, WM_COMMAND, MAKEWPARAM(AppearanceDevice, CBN_SELCHANGE), 0);
     };
     app.settings.scale = 135;
     app.settings.controllerScale = 75;
@@ -703,21 +707,22 @@ void TestIndependentSizes(Harness& harness, HWND allowedWindow) {
     GetWindowRect(GetDlgItem(window, ControllerIndex), &device);
     GetWindowRect(GetDlgItem(window, ControllerDeadzone), &deadzone);
     GetWindowRect(GetDlgItem(window, Status), &status);
-    Check(reset.right < move.left && reset.bottom < slider.top && move.bottom < slider.top &&
-        slider.bottom < device.top && device.right < deadzone.left && deadzone.bottom < status.top,
+    Check(move.right < reset.left && slider.bottom < move.top && device.bottom < slider.top &&
+        slider.right <= deadzone.left && deadzone.bottom < status.top,
         "Controller sizing, device, deadzone, and footer controls must not overlap");
-    Check(!IsWindowEnabled(GetDlgItem(window, MoveOverlay)), "Controller positioning must stay disabled while keyboard view is active");
+    Check(IsWindowEnabled(GetDlgItem(window, MoveOverlay)), "The selected controller device must expose positioning");
     click(MoveOverlay);
-    harness.Expect(false, false, "Controller positioning must not move a keyboard overlay");
+    harness.Expect(true, true, "Controller positioning must preview the selected controller overlay");
+    click(MoveOverlay);
     const std::string beforeDrag = ReadConfiguration(app.configPath);
     slide(ControllerScale, 145, TB_THUMBTRACK);
     Check(app.settings.controllerScale == 75 && Text(window, ControllerScaleValue) == L"145%" &&
         ReadConfiguration(app.configPath) == beforeDrag, "Dragging controller size must update its label without saving partial values");
     for (const int value : {10, 200, 145}) {
         slide(ControllerScale, value);
-        Check(app.settings.controllerScale == value && app.settings.scale == 135 && app.settings.device == OverlayDevice::KeyboardMouse,
-            "Controller size must change independently without switching the active device");
-        expectSize(135);
+        Check(app.settings.controllerScale == value && app.settings.scale == 135 && app.settings.device == OverlayDevice::Controller,
+            "Controller size must change independently while retaining the selected device");
+        expectSize(value);
         harness.Expect(false, false, "Controller size edits must preserve a filtered manually hidden overlay");
     }
     controllerMode(true);
@@ -726,8 +731,8 @@ void TestIndependentSizes(Harness& harness, HWND allowedWindow) {
     click(NavLayout);
     slide(Scale, 85);
     Check(app.settings.scale == 85 && app.settings.controllerScale == 145 && Text(window, ScaleValue) == L"85%",
-        "Keyboard size must retain its own value while controller view is active");
-    expectSize(145);
+        "Keyboard size must retain its own value after selecting keyboard mode");
+    expectSize(85);
     click(NavController);
     click(ResetControllerSize);
     Check(app.settings.controllerScale == 100 && app.settings.scale == 85 && Text(window, ControllerScaleValue) == L"100%" &&
@@ -761,10 +766,10 @@ void TestIndependentSizes(Harness& harness, HWND allowedWindow) {
     Check(app.settings.scale == 100 && app.settings.controllerScale == 120 && app.settings.x == 32 && app.settings.y == 32 &&
         !app.settings.anchorRight && app.settings.anchorBottom,
         "Layout reset must restore keyboard size and shared position without changing controller size");
-    expectSize(120);
+    expectSize(100);
     Settings saved;
     Check(LoadSettings(app.configPath, saved) && saved.scale == 100 && saved.controllerScale == 120 &&
-        saved.device == OverlayDevice::Controller && !saved.enabled && saved.onlySelectedApps &&
+        saved.device == OverlayDevice::KeyboardMouse && !saved.enabled && saved.onlySelectedApps &&
         saved.applications == original.applications && saved.slots[0].input == VK_F8 && saved.slots[0].label == L"Custom",
         "Independent sizes, active device, bindings, and visibility preferences must survive reload together");
     click(NavOverlay);
@@ -841,12 +846,107 @@ void TestControllerEdgePosition(Harness& harness) {
     app.UpdateVisibility();
 }
 
+void TestVisibilityShortcut(Harness& harness) {
+    auto& app = harness.app;
+    const HWND window = app.preferences.Handle();
+    const auto click = [window](int id) {
+        Check(GetDlgItem(window, id) != nullptr, "Shortcut control must be visible");
+        SendMessageW(window, WM_COMMAND, MAKEWPARAM(id, BN_CLICKED), 0);
+    };
+    const auto hotkey = [&](int id, UINT modifiers, UINT vk) {
+        Application::WndProc(app.controller, WM_HOTKEY, static_cast<WPARAM>(id), MAKELPARAM(modifiers, vk));
+    };
+    SetWindowLongPtrW(app.controller, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&app));
+    Check(app.SetHotkey(0, VK_F8), "F8 must register on the isolated desktop");
+    click(OpenShortcut);
+    Check(Text(window, HotkeyValue) == L"F8", "Overlay shortcut button must open the current shortcut");
+    const int previousId = app.hotkeyId_;
+    click(RecordHotkey);
+    Check(app.preferences.Capturing(), "Recording must enable shortcut capture");
+    SendDlgItemMessageW(window, ModShift, BM_SETCHECK, BST_CHECKED, 0);
+    app.Input(VK_F23, true);
+    Check(!app.preferences.Capturing() && app.settings.hotkeyVk == VK_F23 && app.settings.hotkeyModifiers == MOD_SHIFT &&
+        Text(window, HotkeyValue) == L"Shift + F23", "Recording must replace the shortcut and update Settings");
+    Settings saved;
+    Check(LoadSettings(app.configPath, saved) && saved.hotkeyVk == VK_F23 && saved.hotkeyModifiers == MOD_SHIFT,
+        "Recorded shortcut must survive restart");
+    const int currentId = app.hotkeyId_;
+    constexpr int conflictId = 99;
+    Check(RegisterHotKey(app.controller, conflictId, MOD_SHIFT | MOD_ALT, VK_F22), "Test must reserve a competing shortcut");
+    const bool acceptedConflict = app.SetHotkey(MOD_SHIFT | MOD_ALT, VK_F22);
+    UnregisterHotKey(app.controller, conflictId);
+    Check(!acceptedConflict && app.hotkeyId_ == currentId && app.settings.hotkeyVk == VK_F23,
+        "An unavailable shortcut must leave the previous registration active");
+
+    app.captureIgnoreKey_ = 0;
+    hotkey(previousId, 0, VK_F8);
+    hotkey(currentId, 0, VK_F23);
+    Check(app.settings.enabled, "Stale or mismatched hotkey messages must not change visibility");
+    hotkey(currentId, MOD_SHIFT, VK_F23);
+    Check(!app.settings.enabled, "The new shortcut must hide the overlay");
+    hotkey(currentId, MOD_SHIFT, VK_F23);
+    Check(app.settings.enabled, "The new shortcut must show the overlay again");
+    click(ResetHotkey);
+    Check(app.settings.hotkeyVk == VK_F8 && app.settings.hotkeyModifiers == 0 && Text(window, HotkeyValue) == L"F8",
+        "Reset must restore F8 without modifiers");
+    click(NavOverlay);
+    SetWindowLongPtrW(app.controller, GWLP_USERDATA, 0);
+}
+
+void TestControllerSettingsPolling(Harness& harness) {
+    auto& app = harness.app;
+    const auto original = app.settings;
+    const HWND window = app.preferences.Handle();
+    bool connected = true;
+    const auto read = [](void* context, int index, ControllerRawState& raw) {
+        if (index != 0 || !*static_cast<const bool*>(context)) return false;
+        raw.buttons = 0x1000;
+        raw.leftTrigger = 255;
+        return true;
+    };
+    app.controllerProvider_.~ControllerProvider();
+    new (&app.controllerProvider_) ControllerProvider(read, &connected);
+    app.settings.enabled = false;
+    app.settings.device = OverlayDevice::Controller;
+    app.settings.controllerIndex = 0;
+    app.preferences.SelectPage(4);
+    Focus(window);
+    app.Changed();
+    Check(app.preferences.WantsControllerInput() && app.controllerState.connected && app.controllerState.buttons == 0x1000 &&
+        app.controllerState.leftTrigger == 1.f && Text(window, ControllerConnection) == L"Connected",
+        "Controller settings must show live input while the overlay is filtered and manually hidden");
+    harness.Expect(false, false, "Testing a controller in Settings must preserve manual hide and application filtering");
+
+    Focus(harness.outside);
+    app.UpdateVisibility();
+    Check(!app.preferences.WantsControllerInput() && !app.controllerTimerInterval_ && !app.controllerState.connected,
+        "Leaving controller Settings must stop polling when the overlay is hidden");
+    Focus(window);
+    app.UpdateVisibility();
+    Check(app.controllerState.connected && Text(window, ControllerConnection) == L"Connected",
+        "Returning to controller Settings must resume input polling");
+    connected = false;
+    app.Changed();
+    Check(!app.controllerState.connected && Text(window, ControllerConnection) == L"Waiting for controller",
+        "The input status must reflect a disconnected source");
+    app.preferences.SelectPage(3);
+    Check(!app.controllerTimerInterval_ && !app.preferences.WantsControllerInput(),
+        "Leaving the Overlay page must stop hidden controller polling");
+    app.controllerProvider_.~ControllerProvider();
+    new (&app.controllerProvider_) ControllerProvider();
+    app.settings = original;
+    app.preferences.SelectPage(0);
+    app.Changed();
+}
+
 void RunTests() {
     Desktop desktop;
     TemporaryDirectory directory;
     AllowedProcess allowed(desktop, directory);
     Harness harness(directory, allowed);
     auto& app = harness.app;
+    TestVisibilityShortcut(harness);
+    TestControllerSettingsPolling(harness);
     harness.Expect(false, false, "An application filter must hide the overlay over Settings");
     harness.BeginPreview();
     SendMessageW(app.preferences.Handle(), WM_COMMAND, MAKEWPARAM(234, BN_CLICKED), 0);

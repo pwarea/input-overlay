@@ -112,7 +112,7 @@ bool Application::Initialize(HINSTANCE instance, bool quiet) {
     if (!RegisterHotKey(controller, HotkeyId, settings.hotkeyModifiers | MOD_NOREPEAT, settings.hotkeyVk)) {
         MessageBoxW(nullptr, L"The hide/show shortcut is already in use. Choose another shortcut in General settings. You can still hide the overlay from its tray menu.", AppName, MB_ICONWARNING);
         settingsRequired = true;
-    }
+    } else hotkeyId_ = HotkeyId;
     UpdateTray();
     if (!trayAdded_) {
         MessageBoxW(nullptr, L"Windows could not create the tray icon. Input Overlay will close so it does not remain running without its controls.", AppName, MB_ICONERROR);
@@ -153,7 +153,8 @@ void Application::Shutdown() {
     if (controller) {
         KillTimer(controller, WheelTimer);
         KillTimer(controller, ControllerTimer);
-        UnregisterHotKey(controller, HotkeyId);
+        if (hotkeyId_) UnregisterHotKey(controller, hotkeyId_);
+        hotkeyId_ = 0;
         WTSUnRegisterSessionNotification(controller);
         if (inputActive_) {
             RAWINPUTDEVICE devices[] = {{1, 2, RIDEV_REMOVE, nullptr}, {1, 6, RIDEV_REMOVE, nullptr}};
@@ -199,6 +200,7 @@ void Application::Toggle() {
 void Application::UpdateVisibility() {
     const HWND foreground = GetForegroundWindow();
     const HWND settingsWindow = preferences.Handle();
+    if (foreground != settingsWindow) captureIgnoreKey_ = 0;
     const bool positionPreview = !sessionLocked && settingsWindow && IsWindowVisible(settingsWindow) &&
         !IsIconic(settingsWindow) && (foreground == settingsWindow || foreground == overlay.Handle());
     const bool endPositioning = overlay.Editing() && !positionPreview;
@@ -229,14 +231,20 @@ void Application::SyncInputRegistration() {
     else if (wanted) MessageBoxW(preferences.Handle(), L"Windows could not enable keyboard and mouse input. Restart Input Overlay to try again.", AppName, MB_ICONERROR);
 }
 
+bool Application::WantsControllerPolling() const {
+    return !shuttingDown_ && !sessionLocked && settings.device == OverlayDevice::Controller &&
+        (visible_ || preferences.WantsControllerInput());
+}
+
 void Application::SyncControllerPolling() {
-    if (shuttingDown_ || !visible_ || settings.device != OverlayDevice::Controller) {
+    if (!WantsControllerPolling()) {
         if (controller) KillTimer(controller, ControllerTimer);
         controllerTimerInterval_ = 0;
         controllerProvider_.Reset();
         if (controllerState != ControllerState{}) {
             controllerState = {};
-            RequestRender();
+            preferences.RefreshControllerInput();
+            if (visible_) RequestRender();
         }
         return;
     }
@@ -244,7 +252,7 @@ void Application::SyncControllerPolling() {
 }
 
 void Application::PollController() {
-    if (shuttingDown_ || !visible_ || settings.device != OverlayDevice::Controller) {
+    if (!WantsControllerPolling()) {
         SyncControllerPolling();
         return;
     }
@@ -252,7 +260,8 @@ void Application::PollController() {
     const auto state = controllerProvider_.Poll(now, settings.controllerIndex, settings.controllerDeadzone);
     if (state != controllerState) {
         controllerState = state;
-        RequestRender();
+        preferences.RefreshControllerInput();
+        if (visible_) RequestRender();
     }
     const auto interval = controllerProvider_.NextPollDelay(now);
     if (interval != controllerTimerInterval_) {
@@ -282,19 +291,12 @@ void Application::EditPosition(bool edit) {
 
 bool Application::SetHotkey(UINT modifiers, UINT vk) {
     modifiers &= MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_WIN;
-    if (!ValidKeyboardKey(vk)) return false;
-    if (modifiers == settings.hotkeyModifiers && vk == settings.hotkeyVk) {
-        UnregisterHotKey(controller, HotkeyId);
-        return RegisterHotKey(controller, HotkeyId, modifiers | MOD_NOREPEAT, vk) != FALSE;
-    }
-    constexpr int CandidateHotkey = 2;
-    if (!RegisterHotKey(controller, CandidateHotkey, modifiers | MOD_NOREPEAT, vk)) return false;
-    UnregisterHotKey(controller, HotkeyId);
-    UnregisterHotKey(controller, CandidateHotkey);
-    if (!RegisterHotKey(controller, HotkeyId, modifiers | MOD_NOREPEAT, vk)) {
-        RegisterHotKey(controller, HotkeyId, settings.hotkeyModifiers | MOD_NOREPEAT, settings.hotkeyVk);
-        return false;
-    }
+    if (!controller || !ValidKeyboardKey(vk)) return false;
+    if (hotkeyId_ && modifiers == settings.hotkeyModifiers && vk == settings.hotkeyVk) return true;
+    const int candidate = hotkeyId_ == HotkeyId ? HotkeyId + 1 : HotkeyId;
+    if (!RegisterHotKey(controller, candidate, modifiers | MOD_NOREPEAT, vk)) return false;
+    if (hotkeyId_) UnregisterHotKey(controller, hotkeyId_);
+    hotkeyId_ = candidate;
     settings.hotkeyModifiers = modifiers; settings.hotkeyVk = vk;
     Changed();
     return true;
@@ -302,7 +304,9 @@ bool Application::SetHotkey(UINT modifiers, UINT vk) {
 
 void Application::ResetInputs() {
     pressed.fill(false); deviceInputs_.clear(); wheelUntil_.fill(0);
+    const bool controllerChanged = controllerState != ControllerState{};
     controllerState = {};
+    if (controllerChanged) preferences.RefreshControllerInput();
     controllerProvider_.Reset();
     controllerTimerInterval_ = 0;
     if (controller) {
@@ -532,7 +536,12 @@ LRESULT CALLBACK Application::WndProc(HWND hwnd, UINT message, WPARAM wParam, LP
             } else self->DeviceInput(INVALID_HANDLE_VALUE, input, (lParam & 1) != 0);
         }
         return 0;
-    case WM_HOTKEY: if (!self->preferences.Capturing()) self->Toggle(); return 0;
+    case WM_HOTKEY:
+        if (self->hotkeyId_ && wParam == static_cast<WPARAM>(self->hotkeyId_) &&
+            LOWORD(lParam) == self->settings.hotkeyModifiers && HIWORD(lParam) == self->settings.hotkeyVk &&
+            !(self->captureIgnoreKey_ == HIWORD(lParam) && GetForegroundWindow() == self->preferences.Handle()) &&
+            !self->preferences.Capturing()) self->Toggle();
+        return 0;
     case WM_APP_FOREGROUND:
         self->UpdateVisibility(); return 0;
     case WM_APP_SHOW_SETTINGS: self->ShowSettings(); return 0;
