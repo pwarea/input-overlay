@@ -1,5 +1,5 @@
 - Added Gaming, 60%, 80% (TKL), and Full size keyboard choices on the Layout page. Gaming remains the default.
-- Added ANSI and ISO layouts with function keys, navigation keys, and a full number pad where applicable.
+- Added ANSI and ISO layouts with function keys, navigation keys, and a full number pad where applicable, with labels fitted to each key.
 - Updated Bindings to show the selected layout while preserving remapped inputs, custom labels, and hidden keys across layouts.
 - Added independent left and right modifiers and Numpad Enter, with correct number-pad input when Num Lock is off.
 - Kept keyboard size, screen anchoring, click-through behavior, and application filtering consistent across layouts.

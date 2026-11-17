@@ -478,8 +478,8 @@ void DrawDevice(Gdiplus::Graphics& graphics, const Settings& settings,
         } else {
             Gdiplus::Font medium(&family, 11.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
             Gdiplus::Font compact(&family, 9.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
-            Gdiplus::Font small(&family, 7.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
-            const Gdiplus::Font* fonts[] = {&letter, &modifier, &medium, &compact, &small};
+            Gdiplus::Font smallestFont(&family, 7.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+            const Gdiplus::Font* fonts[] = {&letter, &modifier, &medium, &compact, &smallestFont};
             struct LabelFit { std::wstring label; float width = 0; bool modifier = false; size_t font = 0; };
             static thread_local std::array<LabelFit, SlotCount> fits;
             Gdiplus::StringFormat measure;
